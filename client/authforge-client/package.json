@@ -1,0 +1,22 @@
+{
+  "name": "@authforge/client",
+  "version": "1.0.0",
+  "description": "AuthForge Official Client SDK — Secure Authentication & Token Lifecycle Management",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "node --import tsx tests/client.test.ts"
+  },
+  "keywords": [
+    "authforge",
+    "auth",
+    "client",
+    "sdk",
+    "jwt",
+    "refresh-token-rotation"
+  ],
+  "author": "AuthForge Team",
+  "license": "ISC"
+}

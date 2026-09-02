@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LoginLab — AuthForge Identity Client</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-background">
+    <div class="mesh-gradient-1"></div>
+    <div class="mesh-gradient-2"></div>
+  </div>
+
+  <div id="toast-container" class="toast-container"></div>
+
+  <main class="main-container">
+    <!-- Brand Header -->
+    <header class="brand-header">
+      <div class="brand-logo">
+        <div class="logo-icon">⚡</div>
+        <span class="logo-text">Login<span class="highlight">Lab</span></span>
+      </div>
+      <div class="auth-status-badge" id="global-status-badge">
+        <span class="status-dot"></span>
+        <span class="status-text" id="status-label">Initializing...</span>
+      </div>
+    </header>
+
+    <!-- Card Wrapper -->
+    <div class="card-wrapper glass-card">
+      
+      <!-- 1. LOGIN VIEW -->
+      <section id="view-login" class="view-section active">
+        <div class="view-header">
+          <h2>Welcome back</h2>
+          <p>Sign in to your account powered by AuthForge</p>
+        </div>
+
+        <form id="form-login" class="auth-form" onsubmit="return false;">
+          <div class="form-group">
+            <label for="login-email">Email address</label>
+            <input type="email" id="login-email" placeholder="name@company.com" required autocomplete="email">
+          </div>
+
+          <div class="form-group">
+            <div class="label-row">
+              <label for="login-password">Password</label>
+              <a href="#" class="link" id="link-forgot-password">Forgot password?</a>
+            </div>
+            <input type="password" id="login-password" placeholder="••••••••" required autocomplete="current-password">
+          </div>
+
+          <button type="submit" id="btn-login" class="btn btn-primary">
+            <span class="btn-text">Sign In</span>
+          </button>
+        </form>
+
+        <div class="view-footer">
+          <p>Don't have an account? <a href="#" class="link" id="link-to-register">Create account</a></p>
+        </div>
+      </section>
+
+      <!-- 2. REGISTER VIEW -->
+      <section id="view-register" class="view-section">
+        <div class="view-header">
+          <h2>Create an account</h2>
+          <p>Get started with AuthForge secure authentication</p>
+        </div>
+
+        <form id="form-register" class="auth-form" onsubmit="return false;">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="reg-first-name">First name</label>
+              <input type="text" id="reg-first-name" placeholder="Jane" autocomplete="given-name">
+            </div>
+            <div class="form-group">
+              <label for="reg-last-name">Last name</label>
+              <input type="text" id="reg-last-name" placeholder="Doe" autocomplete="family-name">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="reg-email">Email address</label>
+            <input type="email" id="reg-email" placeholder="name@company.com" required autocomplete="email">
+          </div>
+
+          <div class="form-group">
+            <label for="reg-password">Password</label>
+            <input type="password" id="reg-password" placeholder="Minimum 8 characters" required autocomplete="new-password">
+            <span class="field-hint">Must contain upper, lower, number & symbol</span>
+          </div>
+
+          <button type="submit" id="btn-register" class="btn btn-primary">
+            <span class="btn-text">Register Account</span>
+          </button>
+        </form>
+
+        <div class="view-footer">
+          <p>Already have an account? <a href="#" class="link" id="link-to-login">Sign in</a></p>
+        </div>
+      </section>
+
+      <!-- 3. EMAIL VERIFICATION OTP VIEW -->
+      <section id="view-verify-email" class="view-section">
+        <div class="view-header">
+          <h2>Verify your email</h2>
+          <p>Enter the 6-digit verification code sent to <strong id="verify-email-display">your email</strong></p>
+        </div>
+
+        <form id="form-verify-email" class="auth-form" onsubmit="return false;">
+          <div class="form-group">
+            <label for="verify-otp">6-Digit Verification Code</label>
+            <input type="text" id="verify-otp" maxlength="6" placeholder="123456" required class="otp-input" inputmode="numeric">
+          </div>
+
+          <button type="submit" id="btn-verify-otp" class="btn btn-primary">
+            <span class="btn-text">Verify & Continue</span>
+          </button>
+
+          <div class="resend-row">
+            <button type="button" id="btn-resend-otp" class="btn-link">Resend Code</button>
+            <span id="resend-timer" class="timer-text"></span>
+          </div>
+        </form>
+
+        <div class="view-footer">
+          <p><a href="#" class="link" id="link-back-to-login">Back to Sign In</a></p>
+        </div>
+      </section>
+
+      <!-- 4. FORGOT PASSWORD VIEW -->
+      <section id="view-forgot" class="view-section">
+        <div class="view-header">
+          <h2>Reset password</h2>
+          <p>Enter your email to receive a password recovery code</p>
+        </div>
+
+        <form id="form-forgot" class="auth-form" onsubmit="return false;">
+          <div class="form-group">
+            <label for="forgot-email">Email address</label>
+            <input type="email" id="forgot-email" placeholder="name@company.com" required>
+          </div>
+
+          <button type="submit" id="btn-forgot" class="btn btn-primary">
+            <span class="btn-text">Send Recovery Code</span>
+          </button>
+        </form>
+
+        <div class="view-footer">
+          <p><a href="#" class="link" id="link-forgot-to-login">Back to Sign In</a></p>
+        </div>
+      </section>
+
+      <!-- 5. VERIFY RESET OTP VIEW -->
+      <section id="view-reset-verify" class="view-section">
+        <div class="view-header">
+          <h2>Enter recovery code</h2>
+          <p>Enter the 6-digit reset code sent to <strong id="reset-email-display">your email</strong></p>
+        </div>
+
+        <form id="form-reset-verify" class="auth-form" onsubmit="return false;">
+          <div class="form-group">
+            <label for="reset-otp">6-Digit Reset Code</label>
+            <input type="text" id="reset-otp" maxlength="6" placeholder="654321" required class="otp-input" inputmode="numeric">
+          </div>
+
+          <button type="submit" id="btn-reset-verify" class="btn btn-primary">
+            <span class="btn-text">Verify Reset Code</span>
+          </button>
+        </form>
+      </section>
+
+      <!-- 6. COMPLETE PASSWORD RESET VIEW -->
+      <section id="view-reset-complete" class="view-section">
+        <div class="view-header">
+          <h2>Set new password</h2>
+          <p>Choose a strong, unique password for your account</p>
+        </div>
+
+        <form id="form-reset-complete" class="auth-form" onsubmit="return false;">
+          <div class="form-group">
+            <label for="reset-new-password">New Password</label>
+            <input type="password" id="reset-new-password" placeholder="••••••••" required autocomplete="new-password">
+          </div>
+
+          <button type="submit" id="btn-reset-complete" class="btn btn-primary">
+            <span class="btn-text">Save New Password</span>
+          </button>
+        </form>
+      </section>
+
+      <!-- 7. AUTHENTICATED DASHBOARD VIEW -->
+      <section id="view-dashboard" class="view-section">
+        <div class="dashboard-header">
+          <div class="user-greeting">
+            <h2 id="dash-greeting">Welcome, User</h2>
+            <span class="user-email-badge" id="dash-email">user@example.com</span>
+          </div>
+          <button type="button" id="btn-logout" class="btn btn-secondary btn-sm">Sign Out</button>
+        </div>
+
+        <div class="dashboard-grid">
+          <!-- Profile & Security Status Widget -->
+          <div class="widget-card">
+            <div class="widget-title">
+              <span class="icon">🛡️</span> Account Security Status
+            </div>
+            <div class="stat-list">
+              <div class="stat-item">
+                <span class="stat-label">Email Verification</span>
+                <span class="badge" id="sec-email-verified">Verified</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Active Sessions</span>
+                <span class="stat-value" id="sec-active-sessions">1</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Account Lockout Status</span>
+                <span class="badge badge-success" id="sec-locked-status">Normal (Unlocked)</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Last Password Change</span>
+                <span class="stat-value" id="sec-password-updated">Just now</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Change Password Widget -->
+          <div class="widget-card">
+            <div class="widget-title">
+              <span class="icon">🔑</span> Update Password
+            </div>
+            <form id="form-change-password" onsubmit="return false;">
+              <div class="form-group">
+                <label for="change-current-pass">Current Password</label>
+                <input type="password" id="change-current-pass" required placeholder="••••••••">
+              </div>
+              <div class="form-group">
+                <label for="change-new-pass">New Password</label>
+                <input type="password" id="change-new-pass" required placeholder="••••••••">
+              </div>
+              <button type="submit" id="btn-change-password" class="btn btn-primary btn-sm">
+                Update & Invalidate Other Sessions
+              </button>
+            </form>
+          </div>
+        </div>
+
+        <!-- Active Sessions Section -->
+        <div class="sessions-card">
+          <div class="sessions-header">
+            <div class="widget-title">
+              <span class="icon">💻</span> Connected Devices & Sessions
+            </div>
+            <button type="button" id="btn-logout-all" class="btn btn-danger btn-sm">
+              Sign Out All Devices
+            </button>
+          </div>
+          <div id="sessions-list" class="sessions-list">
+            <!-- Populated dynamically by app.js -->
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

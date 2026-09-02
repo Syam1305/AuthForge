@@ -1,0 +1,24 @@
+{
+  "name": "loginlab",
+  "version": "1.0.0",
+  "description": "LoginLab — AuthForge Consumer Client Application & Interactive Dashboard",
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsx watch src/server.ts",
+    "test": "node --import tsx tests/loginlab_integration.test.ts"
+  },
+  "dependencies": {
+    "@authforge/client": "file:../authforge-client",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.13.5",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3"
+  }
+}
