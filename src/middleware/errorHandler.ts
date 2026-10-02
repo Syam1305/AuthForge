@@ -72,16 +72,26 @@ export function errorHandler(
   // 4. Handle Prisma Known Request Errors (e.g. unique constraint race condition)
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
     if (err.code === 'P2002') {
+      const target = Array.isArray((err.meta as { target?: string[] })?.target)
+        ? (err.meta as { target: string[] }).target.join(', ')
+        : String((err.meta as { target?: unknown })?.target || '');
+
+      const isPhone = target.toLowerCase().includes('phone');
+      const errorCode = isPhone ? 'PHONE_ALREADY_EXISTS' : 'EMAIL_ALREADY_EXISTS';
+      const errorMessage = isPhone
+        ? 'An account with this phone number already exists.'
+        : 'An account with this email already exists.';
+
       logger.warn(
-        `HTTP ${req.method} ${req.originalUrl} - 409 - [EMAIL_ALREADY_EXISTS] Unique constraint violation caught`,
+        `HTTP ${req.method} ${req.originalUrl} - 409 - [${errorCode}] Unique constraint violation caught (${target})`,
         { requestId: req.id }
       );
 
       res.status(409).json({
         success: false,
         error: {
-          code: 'EMAIL_ALREADY_EXISTS',
-          message: 'An account with this email already exists.'
+          code: errorCode,
+          message: errorMessage
         }
       });
       return;

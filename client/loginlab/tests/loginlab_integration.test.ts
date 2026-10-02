@@ -27,6 +27,7 @@ async function runLoginLabTests() {
   const auth = new AuthForgeClient({
     baseUrl: AUTHFORGE_URL,
     tokenStorage: storage,
+    timeoutMs: 35000,
     autoRestore: false
   });
 
@@ -42,7 +43,12 @@ async function runLoginLabTests() {
 
   // --- 2. EMAIL VERIFICATION OTP FLOW ---
   console.log('\n--- 2. Email Verification OTP Flow ---');
-  const devOtp = DevelopmentOtpDeliveryProvider.getDevOtp('verify', testEmail);
+  let devOtp = DevelopmentOtpDeliveryProvider.getDevOtp('verify', testEmail);
+  if (!devOtp) {
+    const res = await fetch(`${AUTHFORGE_URL}/api/v1/auth/dev/otp?email=${encodeURIComponent(testEmail)}&type=verify`);
+    const json: any = await res.json();
+    devOtp = json?.data?.otp;
+  }
   assert(devOtp !== undefined, 'Dev verification OTP captured');
 
   const verifyResult = await auth.verifyEmail(testEmail, devOtp!);
@@ -52,7 +58,7 @@ async function runLoginLabTests() {
   console.log('\n--- 3. Login & Dashboard Session ---');
   const loginResult = await auth.login({ email: testEmail, password });
   assert(auth.state.isAuthenticated() === true, 'Auth state set to authenticated');
-  assert(loginResult.accessToken && loginResult.refreshToken, 'Received access and refresh token pair');
+  assert(Boolean(loginResult.accessToken && loginResult.refreshToken), 'Received access and refresh token pair');
 
   const me = await auth.getMe();
   assert(me.email === testEmail && me.firstName === 'LoginLab', 'User profile retrieved via /me');
@@ -113,7 +119,12 @@ async function runLoginLabTests() {
   // --- 7. PASSWORD RESET FLOW ---
   console.log('\n--- 7. Password Reset Recovery Flow ---');
   await auth.requestPasswordReset(testEmail);
-  const resetOtp = DevelopmentOtpDeliveryProvider.getDevOtp('reset', testEmail);
+  let resetOtp = DevelopmentOtpDeliveryProvider.getDevOtp('reset', testEmail);
+  if (!resetOtp) {
+    const res = await fetch(`${AUTHFORGE_URL}/api/v1/auth/dev/otp?email=${encodeURIComponent(testEmail)}&type=reset`);
+    const json: any = await res.json();
+    resetOtp = json?.data?.otp;
+  }
   assert(resetOtp !== undefined, 'Password reset OTP captured');
 
   const resetVerify = await auth.verifyPasswordResetOtp(testEmail, resetOtp!);
@@ -140,7 +151,7 @@ async function runLoginLabTests() {
   try {
     await auth.login({ email: lockoutEmail, password: 'Password123!' });
   } catch (err) {
-    if (err instanceof AuthorizationError && (err as any).code === 'ACCOUNT_LOCKED') {
+    if (err instanceof AuthorizationError && err.code === 'ACCOUNT_LOCKED') {
       accountLockedCaught = true;
     }
   }

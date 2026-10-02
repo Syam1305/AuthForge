@@ -7,14 +7,15 @@ AuthForge is a standalone, enterprise-grade reusable authentication backend serv
 ## Current Phase
 
 ```text
-Phase 8 — LoginLab Integration (COMPLETED)
+Phase 10 — Google Authentication / "Continue with Google" (COMPLETED)
 ```
 
-Phase 8 integrates AuthForge as the sole authentication provider for **LoginLab**:
-* **Zero Database Access**: LoginLab connects purely via HTTPS/HTTP JSON REST endpoints to AuthForge (`http://localhost:4000`).
-* **Complete UI/UX Flows**: Modern, glassmorphic Single Page Application (`client/loginlab`) supporting registration, OTP email verification, login, session list/revocation, password reset recovery, change password, and account security overview.
-* **Single-Flight Token Refresh**: Transparent handling of expired access tokens without refresh storming or replay false-positives.
-* **Lockout & Security Auditing**: Full integration with AuthForge brute-force account lockout and security status tracking.
+Phase 10 adds **Google Authentication** via Google Identity Services (GIS):
+* **Authoritative Session Management**: Google serves purely as an external identity provider (`AuthProvider.GOOGLE`). AuthForge validates ID tokens, issues authoritative short-lived access JWTs and rotating refresh tokens, and manages server-side sessions.
+* **Account Takeover Protection**: If a Google login uses an email matching an unlinked existing AuthForge account, automatic account merging is strictly rejected (`409 GOOGLE_LINK_REQUIRED`), requiring explicit authenticated linking.
+* **Race Condition Resilience**: Handles concurrent first-time logins gracefully using unique database constraints `(provider, providerSubject)` and atomic transactions.
+* **Cross-User Linking Protection**: Strict validation prevents attaching already-linked Google identities to different user accounts.
+* **Client SDK & LoginLab Integration**: Native SDK support (`loginWithGoogle`, `linkGoogle`) and responsive GIS button integration in LoginLab.
 
 ---
 

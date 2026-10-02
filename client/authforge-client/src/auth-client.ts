@@ -6,10 +6,13 @@ import {
   Session,
   SecurityStatus,
   MessageResponse,
+  VerificationResponse,
   EmailVerificationResponse,
   PasswordResetVerifyResponse,
   RegisterParams,
+  PhoneRegisterParams,
   LoginParams,
+  PhonePasswordLoginParams,
   ChangePasswordParams,
   AuthForgeClientOptions
 } from './types.js';
@@ -64,10 +67,22 @@ export class AuthForgeClient {
   }
 
   /**
-   * Registers a new user account.
+   * Registers a new user account with email and password.
    */
   public async register(params: RegisterParams): Promise<RegisterResponse> {
     const data = await this.httpClient.request<{ user: User }>('/api/v1/auth/register', {
+      method: 'POST',
+      body: params
+    });
+
+    return data;
+  }
+
+  /**
+   * Registers a new user account with phone number.
+   */
+  public async registerWithPhone(params: PhoneRegisterParams): Promise<RegisterResponse> {
+    const data = await this.httpClient.request<{ user: User }>('/api/v1/auth/phone/register', {
       method: 'POST',
       body: params
     });
@@ -94,6 +109,116 @@ export class AuthForgeClient {
 
     this.authState.setAuthenticated(data.user);
     return data;
+  }
+
+  /**
+   * Authenticates user with phone number and password.
+   */
+  public async loginWithPhone(params: PhonePasswordLoginParams): Promise<LoginResponse> {
+    const data = await this.httpClient.request<LoginResponse>('/api/v1/auth/phone/login', {
+      method: 'POST',
+      body: params
+    });
+
+    await this.tokenStorage.saveTokens({
+      accessToken: data.accessToken,
+      refreshToken: data.refreshToken,
+      tokenType: data.tokenType,
+      expiresIn: data.expiresIn
+    });
+
+    this.authState.setAuthenticated(data.user);
+    return data;
+  }
+
+  /**
+   * Requests a passwordless 6-digit OTP code to the provided phone number.
+   */
+  public async requestPhoneLogin(phoneNumber: string): Promise<MessageResponse> {
+    return await this.httpClient.request<MessageResponse>('/api/v1/auth/phone/login/request', {
+      method: 'POST',
+      body: { phoneNumber }
+    });
+  }
+
+  /**
+   * Verifies a passwordless phone OTP and receives access/refresh tokens.
+   */
+  public async verifyPhoneLogin(phoneNumber: string, otp: string): Promise<LoginResponse> {
+    const data = await this.httpClient.request<LoginResponse>('/api/v1/auth/phone/login/verify', {
+      method: 'POST',
+      body: { phoneNumber, otp }
+    });
+
+    await this.tokenStorage.saveTokens({
+      accessToken: data.accessToken,
+      refreshToken: data.refreshToken,
+      tokenType: data.tokenType,
+      expiresIn: data.expiresIn
+    });
+
+    this.authState.setAuthenticated(data.user);
+    return data;
+  }
+
+  /**
+   * Verifies a phone number with a 6-digit OTP code.
+   */
+  public async verifyPhone(phoneNumber: string, otp: string): Promise<VerificationResponse> {
+    return await this.httpClient.request<VerificationResponse>('/api/v1/auth/phone/verification/verify', {
+      method: 'POST',
+      body: { phoneNumber, otp }
+    });
+  }
+
+  /**
+   * Requests resend of a phone verification OTP code.
+   */
+  public async resendPhoneVerification(phoneNumber: string): Promise<MessageResponse> {
+    return await this.httpClient.request<MessageResponse>('/api/v1/auth/phone/verification/resend', {
+      method: 'POST',
+      body: { phoneNumber }
+    });
+  }
+
+  /**
+   * Requests a password reset OTP for a phone number.
+   */
+  public async requestPhonePasswordReset(phoneNumber: string): Promise<MessageResponse> {
+    return await this.httpClient.request<MessageResponse>('/api/v1/auth/phone/password-reset/request', {
+      method: 'POST',
+      body: { phoneNumber }
+    });
+  }
+
+  /**
+   * Verifies a password reset OTP for a phone number and receives a reset token.
+   */
+  public async verifyPhonePasswordReset(phoneNumber: string, otp: string): Promise<PasswordResetVerifyResponse> {
+    return await this.httpClient.request<PasswordResetVerifyResponse>('/api/v1/auth/phone/password-reset/verify', {
+      method: 'POST',
+      body: { phoneNumber, otp }
+    });
+  }
+
+  /**
+   * Authenticated user requests changing their phone number.
+   */
+  public async requestPhoneChange(newPhoneNumber: string): Promise<MessageResponse> {
+    return await this.authenticatedRequest<MessageResponse>('/api/v1/auth/phone/change/request', {
+      method: 'POST',
+      body: { newPhoneNumber }
+    });
+  }
+
+  /**
+   * Authenticated user verifies and confirms their new phone number with an OTP.
+   */
+  public async verifyPhoneChange(newPhoneNumber: string, otp: string): Promise<MessageResponse> {
+    return await this.authenticatedRequest<MessageResponse>('/api/v1/auth/phone/change/verify', {
+      method: 'POST',
+      body: { newPhoneNumber, otp }
+    });
   }
 
   /**
@@ -299,6 +424,37 @@ export class AuthForgeClient {
   }
 
   /**
+   * Authenticates user using a Google ID token ("Continue with Google").
+   * Atomically stores tokens and updates auth state.
+   */
+  public async loginWithGoogle(credential: string): Promise<LoginResponse> {
+    const data = await this.httpClient.request<LoginResponse>('/api/v1/auth/google', {
+      method: 'POST',
+      body: { credential }
+    });
+
+    await this.tokenStorage.saveTokens({
+      accessToken: data.accessToken,
+      refreshToken: data.refreshToken,
+      tokenType: data.tokenType,
+      expiresIn: data.expiresIn
+    });
+
+    this.authState.setAuthenticated(data.user);
+    return data;
+  }
+
+  /**
+   * Explicitly links a Google account to current authenticated user.
+   */
+  public async linkGoogle(credential: string): Promise<MessageResponse> {
+    return await this.authenticatedRequest<MessageResponse>('/api/v1/auth/identities/google/link', {
+      method: 'POST',
+      body: { credential }
+    });
+  }
+
+  /**
    * Internal helper to clean up local storage and update auth state to unauthenticated.
    */
   private async handleAuthFailure(): Promise<void> {
@@ -306,3 +462,4 @@ export class AuthForgeClient {
     this.authState.setUnauthenticated();
   }
 }
+

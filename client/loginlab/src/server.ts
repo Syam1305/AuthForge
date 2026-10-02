@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { config } from './config.js';
 
@@ -11,15 +12,19 @@ export function createLoginLabApp() {
 
   app.use(express.json());
 
-  // Expose public runtime config endpoint to client UI (only non-sensitive baseUrl)
+  // Expose public runtime config endpoint to client UI (only non-sensitive public parameters)
   app.get('/api/config', (_req, res) => {
     res.json({
-      authforgeBaseUrl: config.authforgeBaseUrl
+      authforgeBaseUrl: config.authforgeBaseUrl,
+      googleClientId: config.googleClientId,
+      googleAuthEnabled: config.googleAuthEnabled
     });
   });
 
-  // Serve static assets
-  const publicDir = path.join(__dirname, 'public');
+  // Serve static assets (check dist/public or src/public)
+  const publicDir = fs.existsSync(path.join(__dirname, 'public'))
+    ? path.join(__dirname, 'public')
+    : path.join(__dirname, '..', 'src', 'public');
   app.use(express.static(publicDir));
 
   // Single-page application fallback

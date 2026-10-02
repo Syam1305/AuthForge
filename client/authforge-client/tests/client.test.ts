@@ -109,7 +109,7 @@ async function runClientTests() {
   try {
     await client1.revokeSession(user2SessionId);
   } catch (err) {
-    if (err instanceof AuthorizationError && (err as any).code === 'SESSION_FORBIDDEN') {
+    if (err instanceof AuthorizationError && err.code === 'SESSION_FORBIDDEN') {
       forbiddenErrorCaught = true;
     }
   }

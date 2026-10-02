@@ -45,7 +45,7 @@ export function createApp(): Express {
   );
 
   // 3. CORS Configuration
-  const rawOrigins = env.CORS_ORIGIN.split(',').map((origin) => origin.trim()).filter(Boolean);
+  const rawOrigins = (process.env.CORS_ORIGINS || env.CORS_ORIGIN).split(',').map((origin) => origin.trim()).filter(Boolean);
   const isWildcard = rawOrigins.includes('*');
 
   if (env.NODE_ENV === 'production' && isWildcard) {
@@ -60,6 +60,15 @@ export function createApp(): Express {
         if (isWildcard || rawOrigins.includes(origin)) {
           return callback(null, true);
         }
+
+        // Development mode: Allow localhost and 127.0.0.1 on any port for local development tools (e.g. Flutter Web, React, Vite)
+        if (env.NODE_ENV !== 'production') {
+          const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+          if (isLocalhost) {
+            return callback(null, true);
+          }
+        }
+
         return callback(new Error(`Origin ${origin} is not allowed by CORS policy`));
       },
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -102,3 +111,4 @@ export function createApp(): Express {
 }
 
 export const app = createApp();
+

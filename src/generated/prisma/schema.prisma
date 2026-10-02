@@ -1,0 +1,180 @@
+// AuthForge Prisma Schema
+// Phase 5: Account Security, Session Security & Authentication Hardening
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+enum OtpPurpose {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+  PHONE_VERIFICATION
+  PHONE_LOGIN
+  PHONE_PASSWORD_RESET
+}
+
+enum AuthProvider {
+  GOOGLE
+}
+
+enum SecurityEventType {
+  REGISTER
+  LOGIN_SUCCESS
+  LOGIN_FAILURE
+  LOGOUT
+  LOGOUT_ALL
+  PASSWORD_CHANGED
+  PASSWORD_RESET
+  EMAIL_VERIFIED
+  REFRESH_SUCCESS
+  REFRESH_REUSE_DETECTED
+  SESSION_REVOKED
+  ACCOUNT_LOCKED
+  ACCOUNT_UNLOCKED
+  PHONE_VERIFIED
+  PHONE_OTP_REQUESTED
+  PHONE_OTP_RESENT
+  PHONE_LOGIN_SUCCESS
+  PHONE_LOGIN_FAILURE
+  PHONE_PASSWORD_RESET_REQUESTED
+  PHONE_PASSWORD_RESET_SUCCESS
+  PHONE_NUMBER_CHANGED
+  SMS_DELIVERY_FAILED
+  GOOGLE_LOGIN_SUCCESS
+  GOOGLE_LOGIN_FAILURE
+  GOOGLE_IDENTITY_CREATED
+  GOOGLE_IDENTITY_LINKED
+}
+
+model User {
+  id                          String                       @id @default(uuid())
+  email                       String?                      @unique
+  phoneNumber                 String?                      @unique
+  passwordHash                String?
+  firstName                   String?
+  lastName                    String?
+  isActive                    Boolean                      @default(true)
+  emailVerifiedAt             DateTime?
+  phoneNumberVerifiedAt       DateTime?
+  failedLoginAttempts         Int                          @default(0)
+  lockedUntil                 DateTime?
+  passwordUpdatedAt           DateTime                     @default(now())
+  createdAt                   DateTime                     @default(now())
+  updatedAt                   DateTime                     @updatedAt
+  identities                  AuthIdentity[]
+  otpChallenges               OtpChallenge[]
+  passwordResetAuthorizations PasswordResetAuthorization[]
+  sessions                    Session[]
+  securityEvents              SecurityEvent[]
+
+  @@index([phoneNumber])
+}
+
+model AuthIdentity {
+  id              String       @id @default(uuid())
+  userId          String
+  provider        AuthProvider
+  providerSubject String
+  email           String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerSubject])
+  @@index([userId])
+}
+
+model OtpChallenge {
+  id          String     @id @default(uuid())
+  userId      String
+  purpose     OtpPurpose
+  codeHash    String
+  expiresAt   DateTime
+  attempts    Int        @default(0)
+  maxAttempts Int        @default(5)
+  consumedAt  DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+  @@index([expiresAt])
+}
+
+model PasswordResetAuthorization {
+  id         String    @id @default(uuid())
+  userId     String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Session {
+  id               String    @id @default(uuid())
+  userId           String
+  ipAddress        String?
+  userAgent        String?
+  lastUsedAt       DateTime  @default(now())
+  revocationReason String?
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokens RefreshToken[]
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([revokedAt])
+}
+
+model RefreshToken {
+  id                String    @id @default(uuid())
+  sessionId         String
+  familyId          String
+  tokenHash         String    @unique
+  expiresAt         DateTime
+  consumedAt        DateTime?
+  revokedAt         DateTime?
+  replacedByTokenId String?
+  createdAt         DateTime  @default(now())
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([familyId])
+  @@index([expiresAt])
+  @@index([consumedAt])
+  @@index([revokedAt])
+}
+
+model SecurityEvent {
+  id        String            @id @default(uuid())
+  userId    String?
+  type      SecurityEventType
+  ipAddress String?
+  userAgent String?
+  metadata  Json?
+  createdAt DateTime          @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([type])
+  @@index([createdAt])
+}

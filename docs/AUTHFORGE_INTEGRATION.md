@@ -100,7 +100,17 @@ AUTHFORGE_BASE_URL=https://auth.yourdomain.com
 3. User can revoke specific other devices (`DELETE /api/v1/auth/sessions/:sessionId`) or all devices (`POST /api/v1/auth/logout-all`).
 4. Server strictly enforces session ownership, preventing cross-user revocation.
 
+### 3.6 Phone Authentication & SMS Delivery Architecture
+1. LoginLab provides phone number input in international E.164 format (e.g. `+91 98765 43210`).
+2. AuthForge normalizes the number with `libphonenumber-js` and generates a cryptographically random 6-digit OTP stored as a SHA-256 hash in PostgreSQL.
+3. AuthForge routes SMS delivery to the configured `SmsDeliveryProvider`:
+   - **Development (`SMS_PROVIDER=development`):** AuthForge captures the OTP in local dev sandbox and logs to the console for testing.
+   - **Production (`SMS_PROVIDER=msg91`):** AuthForge sends the generated OTP via the MSG91 SendOTP V5 API to the Indian cellular network.
+4. User enters the OTP in LoginLab -> AuthForge verifies the hash and issues session tokens.
+5. **Security Invariant:** LoginLab and the Client SDK have zero knowledge of MSG91. All OTP generation, hashing, rate limiting, and verification are 100% owned by AuthForge.
+
 ---
+
 
 ## 4. Running LoginLab Locally
 

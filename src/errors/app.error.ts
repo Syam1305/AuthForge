@@ -198,4 +198,11 @@ export class AccountDisabledError extends AppError {
   }
 }
 
+export class ServiceUnavailableError extends AppError {
+  constructor(message = 'Service is temporarily unavailable.', code = 'SERVICE_UNAVAILABLE') {
+    super(message, 503, code);
+  }
+}
+
+
 

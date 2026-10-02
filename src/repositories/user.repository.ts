@@ -16,6 +16,19 @@ export class UserRepository {
   }
 
   /**
+   * Finds a single user by their normalized unique phone number.
+   */
+  public static async findByPhoneNumber(
+    phoneNumber: string,
+    tx?: Prisma.TransactionClient
+  ): Promise<User | null> {
+    const client = tx || prisma;
+    return client.user.findUnique({
+      where: { phoneNumber }
+    });
+  }
+
+  /**
    * Finds a single user by their UUID.
    */
   public static async findById(
@@ -69,6 +82,42 @@ export class UserRepository {
       where: { id },
       data: {
         emailVerifiedAt: verifiedAt
+      }
+    });
+  }
+
+  /**
+   * Sets the phoneNumberVerifiedAt timestamp for a user.
+   */
+  public static async markPhoneVerified(
+    id: string,
+    verifiedAt = new Date(),
+    tx?: Prisma.TransactionClient
+  ): Promise<User> {
+    const client = tx || prisma;
+    return client.user.update({
+      where: { id },
+      data: {
+        phoneNumberVerifiedAt: verifiedAt
+      }
+    });
+  }
+
+  /**
+   * Updates a user's phone number and updates the verification timestamp.
+   */
+  public static async updatePhoneNumber(
+    id: string,
+    phoneNumber: string,
+    verifiedAt: Date | null = new Date(),
+    tx?: Prisma.TransactionClient
+  ): Promise<User> {
+    const client = tx || prisma;
+    return client.user.update({
+      where: { id },
+      data: {
+        phoneNumber,
+        phoneNumberVerifiedAt: verifiedAt
       }
     });
   }

@@ -2,6 +2,8 @@ import http from 'http';
 import { app } from './app.js';
 import { env } from './config/env.js';
 import { checkDatabaseConnection, disconnectDatabase } from './database/prisma.js';
+import { defaultOtpDeliveryProvider, HybridOtpDeliveryProvider } from './providers/otp-delivery.provider.js';
+import { defaultSmsDeliveryProvider, HybridSmsDeliveryProvider } from './providers/sms-delivery.provider.js';
 import { logger } from './utils/logger.js';
 
 async function bootstrap(): Promise<void> {
@@ -20,7 +22,41 @@ async function bootstrap(): Promise<void> {
   const latencyInfo = dbHealth.latencyMs !== undefined ? ` (${dbHealth.latencyMs}ms latency)` : '';
   logger.info(`Database connection verified successfully${latencyInfo}.`);
 
-  // 2. Start HTTP Server
+  // 2. Verify SMTP Email Delivery Provider Connectivity
+  if (defaultOtpDeliveryProvider instanceof HybridOtpDeliveryProvider) {
+    const smtp = defaultOtpDeliveryProvider.getSmtpProvider();
+    if (smtp.isConfigured()) {
+      logger.info('SMTP is configured. Verifying SMTP transport connection...');
+      const smtpStatus = await smtp.verifyConnection();
+      if (smtpStatus.success) {
+        logger.info('SMTP connection verified successfully (Gmail SMTP ready for live email delivery).');
+      } else {
+        logger.warn(`SMTP connection verification failed: ${smtpStatus.error}. Live email delivery will attempt or fallback.`);
+      }
+    } else {
+      logger.info('SMTP is not configured. AuthForge is running in Development OTP Sandbox mode.');
+    }
+  }
+
+  // 3. Verify SMS Delivery Provider Connectivity
+  if (defaultSmsDeliveryProvider instanceof HybridSmsDeliveryProvider) {
+    const sms = defaultSmsDeliveryProvider.getRealProvider();
+    if (sms.isConfigured()) {
+      const providerLabel = env.SMS_PROVIDER === 'msg91' ? 'MSG91' : env.SMS_PROVIDER === 'twilio' ? 'Twilio' : 'Real SMS';
+      logger.info(`${providerLabel} provider is configured. Verifying SMS gateway connection...`);
+      const smsStatus = await sms.verifyConnection();
+      if (smsStatus.success) {
+        logger.info(`${providerLabel} connection verified successfully (Ready for live SMS delivery).`);
+      } else {
+        logger.warn(`${providerLabel} connection verification failed: ${smsStatus.error}. Live SMS delivery will attempt or fallback.`);
+      }
+    } else {
+      logger.info('SMS provider is set to Development mode. AuthForge is running in Development SMS Sandbox mode.');
+    }
+  }
+
+
+  // 4. Start HTTP Server
   const server = http.createServer(app);
 
   server.listen(env.PORT, () => {

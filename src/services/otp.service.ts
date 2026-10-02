@@ -41,9 +41,9 @@ export class OtpService {
     purpose: OtpPurpose,
     tx?: Prisma.TransactionClient
   ): Promise<{ challenge: OtpChallenge; plainOtp: string }> {
-    // 1. Check resend cooldown
+    // 1. Check resend cooldown for active unconsumed challenge
     const latestChallenge = await OtpRepository.findLatestChallenge(userId, purpose, tx);
-    if (latestChallenge) {
+    if (latestChallenge && !latestChallenge.consumedAt) {
       const elapsedMs = Date.now() - latestChallenge.createdAt.getTime();
       if (elapsedMs < this.RESEND_COOLDOWN_MS) {
         const remainingSeconds = Math.ceil((this.RESEND_COOLDOWN_MS - elapsedMs) / 1000);

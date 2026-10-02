@@ -83,18 +83,23 @@ export class OtpRepository {
 
   /**
    * Atomically marks a challenge as consumed.
+   * Returns boolean indicating whether this call consumed the challenge (guards against concurrent race condition).
    */
   public static async consumeChallenge(
     id: string,
     tx?: Prisma.TransactionClient
-  ): Promise<OtpChallenge> {
+  ): Promise<boolean> {
     const client = tx || prisma;
-    return client.otpChallenge.update({
-      where: { id },
+    const result = await client.otpChallenge.updateMany({
+      where: {
+        id,
+        consumedAt: null
+      },
       data: {
         consumedAt: new Date()
       }
     });
+    return result.count === 1;
   }
 
   /**

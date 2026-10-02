@@ -508,6 +508,9 @@ Every response from AuthForge is formatted consistently in JSON:
     "email": "user@example.com",
     "emailVerified": true,
     "emailVerifiedAt": "2026-09-01T12:05:00.000Z",
+    "phoneNumber": "+919876543210",
+    "phoneVerified": true,
+    "phoneNumberVerifiedAt": "2026-09-01T12:10:00.000Z",
     "activeSessions": 1,
     "passwordUpdatedAt": "2026-09-01T12:30:00.000Z",
     "accountLocked": false,
@@ -516,3 +519,241 @@ Every response from AuthForge is formatted consistently in JSON:
   }
 }
 ```
+
+---
+
+## 6. Phone Authentication & SMS OTP Endpoints (Phase 9)
+
+### 6.1 Register with Phone Number
+* **Method:** `POST`
+* **Path:** `/api/v1/auth/phone/register`
+* **Rate Limit:** 10 requests / minute / IP
+* **Request Body:**
+```json
+{
+  "phoneNumber": "+919876543210",
+  "password": "OptionalPassword123!",
+  "firstName": "Jane",
+  "lastName": "Doe"
+}
+```
+* **Success Status:** `201 Created`
+
+---
+
+### 6.2 Phone + Password Login
+* **Method:** `POST`
+* **Path:** `/api/v1/auth/phone/login`
+* **Rate Limit:** 100 requests / minute / IP
+* **Request Body:**
+```json
+{
+  "phoneNumber": "+919876543210",
+  "password": "AccountPassword123!"
+}
+```
+* **Success Status:** `200 OK`
+
+---
+
+### 6.3 Passwordless Phone Login Request
+* **Method:** `POST`
+* **Path:** `/api/v1/auth/phone/login/request`
+* **Rate Limit:** 10 requests / minute / IP
+* **Request Body:**
+```json
+{
+  "phoneNumber": "+919876543210"
+}
+```
+* **Success Status:** `200 OK`
+* **Enumeration Protection:** Always returns generic success response.
+
+---
+
+### 6.4 Passwordless Phone Login Verify
+* **Method:** `POST`
+* **Path:** `/api/v1/auth/phone/login/verify`
+* **Rate Limit:** 10 requests / minute / IP
+* **Request Body:**
+```json
+{
+  "phoneNumber": "+919876543210",
+  "otp": "123456"
+}
+```
+* **Success Status:** `200 OK` (returns user, `accessToken`, `refreshToken`)
+
+---
+
+### 6.5 Phone Verification
+* **Method:** `POST`
+* **Path:** `/api/v1/auth/phone/verification/verify`
+* **Rate Limit:** 10 requests / minute / IP
+* **Request Body:**
+```json
+{
+  "phoneNumber": "+919876543210",
+  "otp": "123456"
+}
+```
+* **Success Status:** `200 OK`
+
+---
+
+### 6.6 Resend Phone Verification SMS
+* **Method:** `POST`
+* **Path:** `/api/v1/auth/phone/verification/resend`
+* **Rate Limit:** 10 requests / minute / IP (60s cooldown enforced)
+* **Request Body:**
+```json
+{
+  "phoneNumber": "+919876543210"
+}
+```
+* **Success Status:** `200 OK`
+
+---
+
+### 6.7 Phone Password Reset Request
+* **Method:** `POST`
+* **Path:** `/api/v1/auth/phone/password-reset/request`
+* **Rate Limit:** 10 requests / minute / IP
+* **Request Body:**
+```json
+{
+  "phoneNumber": "+919876543210"
+}
+```
+* **Success Status:** `200 OK`
+
+---
+
+### 6.8 Phone Password Reset Verify
+* **Method:** `POST`
+* **Path:** `/api/v1/auth/phone/password-reset/verify`
+* **Rate Limit:** 10 requests / minute / IP
+* **Request Body:**
+```json
+{
+  "phoneNumber": "+919876543210",
+  "otp": "654321"
+}
+```
+* **Success Status:** `200 OK` (returns `resetToken`)
+
+---
+
+### 6.9 Authenticated Phone Number Change Request
+* **Method:** `POST`
+* **Path:** `/api/v1/auth/phone/change/request`
+* **Authentication:** `Bearer <ACCESS_TOKEN>`
+* **Rate Limit:** 10 requests / minute / IP
+* **Request Body:**
+```json
+{
+  "newPhoneNumber": "+919988776655"
+}
+```
+* **Success Status:** `200 OK`
+
+---
+
+### 6.10 Authenticated Phone Number Change Verify
+* **Method:** `POST`
+* **Path:** `/api/v1/auth/phone/change/verify`
+* **Authentication:** `Bearer <ACCESS_TOKEN>`
+* **Rate Limit:** 10 requests / minute / IP
+* **Request Body:**
+```json
+{
+  "newPhoneNumber": "+919988776655",
+  "otp": "123456"
+}
+```
+* **Success Status:** `200 OK`
+
+---
+
+## 7. Google Authentication & Account Linking Endpoints
+
+### 7.1 Google Authentication ("Continue with Google")
+* **Method:** `POST`
+* **Path:** `/api/v1/auth/google`
+* **Authentication:** None
+* **Rate Limit:** 100 requests / minute / IP
+* **Request Body:**
+```json
+{
+  "credential": "<Google ID Token from GIS client>"
+}
+```
+* **Success Status:** `200 OK`
+* **Success Response Body:**
+```json
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": "uuid-v4",
+      "email": "user@gmail.com",
+      "phoneNumber": null,
+      "firstName": "Jane",
+      "lastName": "Doe",
+      "isActive": true,
+      "emailVerifiedAt": "2026-09-11T12:00:00.000Z",
+      "phoneNumberVerifiedAt": null,
+      "createdAt": "2026-09-11T12:00:00.000Z",
+      "updatedAt": "2026-09-11T12:00:00.000Z"
+    },
+    "accessToken": "eyJhbGciOi...",
+    "refreshToken": "7f8b9a...",
+    "tokenType": "Bearer",
+    "expiresIn": 900
+  }
+}
+```
+* **Account Takeover Prevention Error (409 Conflict):**
+```json
+{
+  "success": false,
+  "error": {
+    "code": "GOOGLE_LINK_REQUIRED",
+    "message": "An account with this email already exists. Please log in with your password and link your Google account in security settings."
+  }
+}
+```
+
+---
+
+### 7.2 Explicit Authenticated Google Account Linking
+* **Method:** `POST`
+* **Path:** `/api/v1/auth/identities/google/link`
+* **Authentication:** `Bearer <ACCESS_TOKEN>`
+* **Rate Limit:** 10 requests / minute / IP
+* **Request Body:**
+```json
+{
+  "credential": "<Google ID Token from GIS client>"
+}
+```
+* **Success Status:** `200 OK`
+* **Success Response Body:**
+```json
+{
+  "success": true,
+  "message": "Google account linked successfully."
+}
+```
+* **Cross-User Linking Conflict Error (409 Conflict):**
+```json
+{
+  "success": false,
+  "error": {
+    "code": "GOOGLE_IDENTITY_ALREADY_LINKED",
+    "message": "This Google account is already linked to another AuthForge user."
+  }
+}
+```
+
+

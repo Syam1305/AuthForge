@@ -9,13 +9,22 @@ import { OtpService } from './otp.service.js';
 import { SessionService } from './session.service.js';
 import { SecurityEventService } from './security-event.service.js';
 import { defaultOtpDeliveryProvider } from '../providers/otp-delivery.provider.js';
-import { RegisterInput, LoginInput, ChangePasswordInput } from '../validation/auth.validation.js';
+import { defaultSmsDeliveryProvider } from '../providers/sms-delivery.provider.js';
+import { PhoneUtil } from '../utils/phone.js';
+import {
+  RegisterInput,
+  PhoneRegisterInput,
+  LoginInput,
+  PhonePasswordLoginInput,
+  ChangePasswordInput
+} from '../validation/auth.validation.js';
 import {
   ConflictError,
   AuthenticationError,
   ForbiddenError,
   NotFoundError,
   OtpInvalidError,
+  OtpAlreadyUsedError,
   EmailAlreadyVerifiedError,
   CurrentPasswordInvalidError,
   PasswordSameAsCurrentError,
@@ -25,11 +34,13 @@ import { logger } from '../utils/logger.js';
 
 export interface PublicUser {
   id: string;
-  email: string;
+  email: string | null;
+  phoneNumber: string | null;
   firstName: string | null;
   lastName: string | null;
   isActive: boolean;
   emailVerifiedAt: Date | null;
+  phoneNumberVerifiedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -43,9 +54,12 @@ export interface LoginResult {
 }
 
 export interface SecurityStatusResult {
-  email: string;
+  email: string | null;
   emailVerified: boolean;
   emailVerifiedAt: Date | null;
+  phoneNumber: string | null;
+  phoneVerified: boolean;
+  phoneNumberVerifiedAt: Date | null;
   activeSessions: number;
   passwordUpdatedAt: Date;
   accountLocked: boolean;
@@ -62,10 +76,12 @@ export class UserService {
     return {
       id: user.id,
       email: user.email,
+      phoneNumber: user.phoneNumber,
       firstName: user.firstName,
       lastName: user.lastName,
       isActive: user.isActive,
       emailVerifiedAt: user.emailVerifiedAt,
+      phoneNumberVerifiedAt: user.phoneNumberVerifiedAt,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt
     };
@@ -79,7 +95,14 @@ export class UserService {
   }
 
   /**
-   * Registers a new user account and initiates email verification challenge.
+   * Normalizes a phone number into canonical E.164 format (e.g. "+919876543210").
+   */
+  public static normalizePhoneNumber(phone: string): string {
+    return PhoneUtil.normalize(phone);
+  }
+
+  /**
+   * Registers a new user account with Email and initiates email verification challenge.
    */
   public static async register(
     input: RegisterInput,
@@ -129,14 +152,78 @@ export class UserService {
     });
 
     // 5. Deliver verification OTP via provider
-    await defaultOtpDeliveryProvider.sendVerificationCode(newUser.email, plainOtp);
-    logger.info(`User registered and verification code dispatched for user ID: ${newUser.id}`);
+    if (newUser.email) {
+      await defaultOtpDeliveryProvider.sendVerificationCode(newUser.email, plainOtp);
+    }
+    logger.info(`User registered and email verification code dispatched for user ID: ${newUser.id}`);
 
     return this.toPublicUser(newUser);
   }
 
   /**
-   * Authenticates user credentials with brute-force lockout protection and session creation.
+   * Registers a new user account with Phone Number and initiates SMS verification challenge.
+   */
+  public static async registerWithPhone(
+    input: PhoneRegisterInput,
+    metadata?: { ipAddress?: string | null; userAgent?: string | null }
+  ): Promise<PublicUser> {
+    const normalizedPhone = this.normalizePhoneNumber(input.phoneNumber);
+
+    // 1. Check for existing user with identical normalized phone number
+    const existingUser = await UserRepository.findByPhoneNumber(normalizedPhone);
+    if (existingUser) {
+      throw new ConflictError('An account with this phone number already exists.');
+    }
+
+    // 2. Hash password if provided
+    let passwordHash: string | null = null;
+    if (input.password && input.password.trim().length > 0) {
+      passwordHash = await PasswordService.hashPassword(input.password);
+    }
+
+    // 3. Create user and dispatch initial phone verification OTP
+    const { newUser, plainOtp } = await prisma.$transaction(async (tx) => {
+      const user = await UserRepository.create(
+        {
+          phoneNumber: normalizedPhone,
+          passwordHash,
+          firstName: input.firstName || null,
+          lastName: input.lastName || null,
+          isActive: true,
+          phoneNumberVerifiedAt: null
+        },
+        tx
+      );
+
+      const challengeResult = await OtpService.createChallenge(
+        user.id,
+        OtpPurpose.PHONE_VERIFICATION,
+        tx
+      );
+
+      return { newUser: user, plainOtp: challengeResult.plainOtp };
+    });
+
+    // 4. Record REGISTER security event
+    await SecurityEventService.recordEvent({
+      userId: newUser.id,
+      type: SecurityEventType.REGISTER,
+      ipAddress: metadata?.ipAddress,
+      userAgent: metadata?.userAgent,
+      metadata: { method: 'phone', hasPassword: Boolean(passwordHash) }
+    });
+
+    // 5. Deliver verification OTP via SMS provider
+    if (newUser.phoneNumber) {
+      await defaultSmsDeliveryProvider.sendVerificationCode(newUser.phoneNumber, plainOtp);
+    }
+    logger.info(`User registered and phone verification code dispatched for user ID: ${newUser.id}`);
+
+    return this.toPublicUser(newUser);
+  }
+
+  /**
+   * Authenticates user credentials (Email + Password) with brute-force lockout protection.
    */
   public static async login(
     input: LoginInput,
@@ -147,8 +234,8 @@ export class UserService {
     // 1. Find user by email
     const user = await UserRepository.findByEmail(normalizedEmail);
 
-    // If user is not found, execute dummy hashing to equalize execution time and prevent enumeration
-    if (!user) {
+    // If user is not found or has no password, execute dummy hashing to equalize execution time
+    if (!user || !user.passwordHash) {
       await PasswordService.verifyDummy(input.password);
       await SecurityEventService.recordEvent({
         userId: null,
@@ -249,7 +336,7 @@ export class UserService {
       type: SecurityEventType.LOGIN_SUCCESS,
       ipAddress: metadata?.ipAddress,
       userAgent: metadata?.userAgent,
-      metadata: { sessionId: session.id }
+      metadata: { sessionId: session.id, method: 'email_password' }
     });
 
     logger.info(`User login successful for user ID: ${user.id}, created session ID: ${session.id}`);
@@ -260,6 +347,320 @@ export class UserService {
       refreshToken: tokens.refreshToken,
       tokenType: 'Bearer',
       expiresIn: tokens.expiresIn
+    };
+  }
+
+  /**
+   * Authenticates user with Phone Number + Password.
+   */
+  public static async loginWithPhone(
+    input: PhonePasswordLoginInput,
+    metadata?: { ipAddress?: string | null; userAgent?: string | null }
+  ): Promise<LoginResult> {
+    const normalizedPhone = this.normalizePhoneNumber(input.phoneNumber);
+    const user = await UserRepository.findByPhoneNumber(normalizedPhone);
+
+    if (!user || !user.passwordHash) {
+      await PasswordService.verifyDummy(input.password);
+      await SecurityEventService.recordEvent({
+        userId: null,
+        type: SecurityEventType.PHONE_LOGIN_FAILURE,
+        ipAddress: metadata?.ipAddress,
+        userAgent: metadata?.userAgent,
+        metadata: { phone: normalizedPhone, reason: 'user_or_password_not_found' }
+      });
+      throw new AuthenticationError('Invalid phone number or password.');
+    }
+
+    if (!user.isActive) {
+      throw new ForbiddenError('This account is inactive.', 'ACCOUNT_INACTIVE');
+    }
+
+    const now = new Date();
+    if (user.lockedUntil && user.lockedUntil > now) {
+      const remainingSeconds = Math.ceil((user.lockedUntil.getTime() - now.getTime()) / 1000);
+      throw new AccountLockedError();
+    }
+
+    const isPasswordValid = await PasswordService.verifyPassword(input.password, user.passwordHash);
+    if (!isPasswordValid) {
+      const updatedUser = await UserRepository.incrementFailedLoginAttempts(user.id);
+      if (updatedUser.failedLoginAttempts >= env.LOGIN_MAX_FAILED_ATTEMPTS) {
+        const lockedUntil = new Date(Date.now() + env.LOGIN_LOCKOUT_MINUTES * 60 * 1000);
+        await UserRepository.lockAccount(user.id, lockedUntil);
+      }
+      throw new AuthenticationError('Invalid phone number or password.');
+    }
+
+    if (user.failedLoginAttempts > 0 || user.lockedUntil !== null) {
+      await UserRepository.resetFailedAttempts(user.id);
+    }
+
+    const { session, tokens } = await SessionService.createSession(user.id, metadata);
+
+    await SecurityEventService.recordEvent({
+      userId: user.id,
+      type: SecurityEventType.PHONE_LOGIN_SUCCESS,
+      ipAddress: metadata?.ipAddress,
+      userAgent: metadata?.userAgent,
+      metadata: { sessionId: session.id, method: 'phone_password' }
+    });
+
+    return {
+      user: this.toPublicUser(user),
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      tokenType: 'Bearer',
+      expiresIn: tokens.expiresIn
+    };
+  }
+
+  /**
+   * Passwordless Phone Login: Requests a 6-digit OTP code to the provided phone number.
+   * Enumeration-safe: always returns generic success.
+   */
+  public static async requestPhoneLogin(phoneNumber: string): Promise<{ message: string }> {
+    const normalizedPhone = this.normalizePhoneNumber(phoneNumber);
+    const user = await UserRepository.findByPhoneNumber(normalizedPhone);
+
+    if (user && user.isActive) {
+      try {
+        const { plainOtp } = await OtpService.createChallenge(
+          user.id,
+          OtpPurpose.PHONE_LOGIN
+        );
+
+        await defaultSmsDeliveryProvider.sendLoginCode(normalizedPhone, plainOtp);
+
+        await SecurityEventService.recordEvent({
+          userId: user.id,
+          type: SecurityEventType.PHONE_OTP_REQUESTED,
+          metadata: { purpose: 'PHONE_LOGIN' }
+        });
+
+        logger.info(`Phone login OTP dispatched for user ${user.id}`);
+      } catch (error) {
+        logger.error(`Error during phone login OTP dispatch for user ${user.id}:`, error);
+      }
+    } else {
+      await PasswordService.verifyDummy('DummyPhoneTiming123');
+      logger.info(`Phone login requested for non-existent or inactive phone: ${normalizedPhone}`);
+    }
+
+    return {
+      message: 'If an account exists for this phone number, a verification code has been sent.'
+    };
+  }
+
+  /**
+   * Passwordless Phone Login: Verifies the 6-digit OTP and establishes an authenticated session.
+   */
+  public static async verifyPhoneLogin(
+    phoneNumber: string,
+    otp: string,
+    metadata?: { ipAddress?: string | null; userAgent?: string | null }
+  ): Promise<LoginResult> {
+    const normalizedPhone = this.normalizePhoneNumber(phoneNumber);
+    const user = await UserRepository.findByPhoneNumber(normalizedPhone);
+
+    if (!user || !user.isActive) {
+      throw new OtpInvalidError();
+    }
+
+    // Verify OTP challenge
+    const challenge = await OtpService.verifyChallenge(
+      user.id,
+      OtpPurpose.PHONE_LOGIN,
+      otp
+    );
+
+    // Atomically consume challenge and mark phone verified if not already verified
+    await prisma.$transaction(async (tx) => {
+      const consumed = await OtpRepository.consumeChallenge(challenge.id, tx);
+      if (!consumed) {
+        throw new OtpAlreadyUsedError();
+      }
+      if (!user.phoneNumberVerifiedAt) {
+        await UserRepository.markPhoneVerified(user.id, new Date(), tx);
+      }
+    });
+
+    // Create session & tokens
+    const { session, tokens } = await SessionService.createSession(user.id, metadata);
+
+    // Record PHONE_LOGIN_SUCCESS
+    await SecurityEventService.recordEvent({
+      userId: user.id,
+      type: SecurityEventType.PHONE_LOGIN_SUCCESS,
+      ipAddress: metadata?.ipAddress,
+      userAgent: metadata?.userAgent,
+      metadata: { sessionId: session.id, method: 'phone_otp' }
+    });
+
+    logger.info(`Phone OTP login successful for user ID: ${user.id}`);
+
+    return {
+      user: this.toPublicUser(user),
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      tokenType: 'Bearer',
+      expiresIn: tokens.expiresIn
+    };
+  }
+
+  /**
+   * Verifies a user's phone number using a submitted OTP code.
+   */
+  public static async verifyPhone(
+    phoneNumber: string,
+    otp: string,
+    metadata?: { ipAddress?: string | null; userAgent?: string | null }
+  ): Promise<{ verified: boolean }> {
+    const normalizedPhone = this.normalizePhoneNumber(phoneNumber);
+    const user = await UserRepository.findByPhoneNumber(normalizedPhone);
+
+    if (!user || !user.isActive) {
+      throw new OtpInvalidError();
+    }
+
+    const challenge = await OtpService.verifyChallenge(
+      user.id,
+      OtpPurpose.PHONE_VERIFICATION,
+      otp
+    );
+
+    await prisma.$transaction(async (tx) => {
+      const consumed = await OtpRepository.consumeChallenge(challenge.id, tx);
+      if (!consumed) {
+        throw new OtpAlreadyUsedError();
+      }
+      await UserRepository.markPhoneVerified(user.id, new Date(), tx);
+    });
+
+    await SecurityEventService.recordEvent({
+      userId: user.id,
+      type: SecurityEventType.PHONE_VERIFIED,
+      ipAddress: metadata?.ipAddress,
+      userAgent: metadata?.userAgent
+    });
+
+    logger.info(`Phone number successfully verified for user ID: ${user.id}`);
+
+    return { verified: true };
+  }
+
+  /**
+   * Resends a phone verification OTP with cooldown enforcement.
+   */
+  public static async resendPhoneVerificationOtp(phoneNumber: string): Promise<{ message: string }> {
+    const normalizedPhone = this.normalizePhoneNumber(phoneNumber);
+    const user = await UserRepository.findByPhoneNumber(normalizedPhone);
+
+    if (!user || !user.isActive) {
+      throw new NotFoundError('User account not found.');
+    }
+
+    const { plainOtp } = await OtpService.createChallenge(
+      user.id,
+      OtpPurpose.PHONE_VERIFICATION
+    );
+
+    await defaultSmsDeliveryProvider.sendVerificationCode(normalizedPhone, plainOtp);
+
+    await SecurityEventService.recordEvent({
+      userId: user.id,
+      type: SecurityEventType.PHONE_OTP_RESENT,
+      metadata: { purpose: 'PHONE_VERIFICATION' }
+    });
+
+    logger.info(`Phone verification code resent for user ID: ${user.id}`);
+
+    return {
+      message: 'Verification code resent successfully.'
+    };
+  }
+
+  /**
+   * Authenticated user requests a phone number change.
+   * Generates a PHONE_VERIFICATION OTP sent to the proposed new phone number.
+   */
+  public static async requestPhoneChange(
+    userId: string,
+    newPhoneNumber: string
+  ): Promise<{ message: string }> {
+    const user = await UserRepository.findById(userId);
+    if (!user || !user.isActive) {
+      throw new NotFoundError('User not found.');
+    }
+
+    const normalizedNewPhone = this.normalizePhoneNumber(newPhoneNumber);
+
+    // Check if new phone is already taken by another account
+    const existing = await UserRepository.findByPhoneNumber(normalizedNewPhone);
+    if (existing && existing.id !== user.id) {
+      throw new ConflictError('This phone number is already registered to another account.');
+    }
+
+    const { plainOtp } = await OtpService.createChallenge(
+      user.id,
+      OtpPurpose.PHONE_VERIFICATION
+    );
+
+    await defaultSmsDeliveryProvider.sendVerificationCode(normalizedNewPhone, plainOtp);
+    logger.info(`Phone change verification code dispatched for user ID: ${user.id}`);
+
+    return {
+      message: 'Verification code has been sent to the new phone number.'
+    };
+  }
+
+  /**
+   * Authenticated user verifies and commits the phone number change.
+   */
+  public static async verifyPhoneChange(
+    userId: string,
+    newPhoneNumber: string,
+    otp: string,
+    metadata?: { ipAddress?: string | null; userAgent?: string | null }
+  ): Promise<{ message: string }> {
+    const user = await UserRepository.findById(userId);
+    if (!user || !user.isActive) {
+      throw new NotFoundError('User not found.');
+    }
+
+    const normalizedNewPhone = this.normalizePhoneNumber(newPhoneNumber);
+
+    const existing = await UserRepository.findByPhoneNumber(normalizedNewPhone);
+    if (existing && existing.id !== user.id) {
+      throw new ConflictError('This phone number is already registered to another account.');
+    }
+
+    const challenge = await OtpService.verifyChallenge(
+      user.id,
+      OtpPurpose.PHONE_VERIFICATION,
+      otp
+    );
+
+    await prisma.$transaction(async (tx) => {
+      const consumed = await OtpRepository.consumeChallenge(challenge.id, tx);
+      if (!consumed) {
+        throw new OtpAlreadyUsedError();
+      }
+      await UserRepository.updatePhoneNumber(user.id, normalizedNewPhone, new Date(), tx);
+    });
+
+    await SecurityEventService.recordEvent({
+      userId: user.id,
+      type: SecurityEventType.PHONE_NUMBER_CHANGED,
+      ipAddress: metadata?.ipAddress,
+      userAgent: metadata?.userAgent,
+      metadata: { newPhoneNumber: normalizedNewPhone }
+    });
+
+    logger.info(`Phone number successfully changed and verified for user ID: ${user.id}`);
+
+    return {
+      message: 'Phone number has been updated and verified successfully.'
     };
   }
 
@@ -278,25 +679,29 @@ export class UserService {
     }
 
     // 1. Verify current password
-    const isCurrentPasswordValid = await PasswordService.verifyPassword(
-      input.currentPassword,
-      user.passwordHash
-    );
+    if (!user.passwordHash) {
+      // User registered passwordless; allow setting first password
+    } else {
+      const isCurrentPasswordValid = await PasswordService.verifyPassword(
+        input.currentPassword,
+        user.passwordHash
+      );
 
-    if (!isCurrentPasswordValid) {
-      await SecurityEventService.recordEvent({
-        userId: user.id,
-        type: SecurityEventType.PASSWORD_CHANGED,
-        ipAddress: metadata?.ipAddress,
-        userAgent: metadata?.userAgent,
-        metadata: { status: 'failed', reason: 'current_password_invalid' }
-      });
-      throw new CurrentPasswordInvalidError();
-    }
+      if (!isCurrentPasswordValid) {
+        await SecurityEventService.recordEvent({
+          userId: user.id,
+          type: SecurityEventType.PASSWORD_CHANGED,
+          ipAddress: metadata?.ipAddress,
+          userAgent: metadata?.userAgent,
+          metadata: { status: 'failed', reason: 'current_password_invalid' }
+        });
+        throw new CurrentPasswordInvalidError();
+      }
 
-    // 2. Ensure new password differs from current password
-    if (input.currentPassword === input.newPassword) {
-      throw new PasswordSameAsCurrentError();
+      // 2. Ensure new password differs from current password
+      if (input.currentPassword === input.newPassword) {
+        throw new PasswordSameAsCurrentError();
+      }
     }
 
     // 3. Hash new password with Argon2id
@@ -342,6 +747,9 @@ export class UserService {
       email: user.email,
       emailVerified: user.emailVerifiedAt !== null,
       emailVerifiedAt: user.emailVerifiedAt,
+      phoneNumber: user.phoneNumber,
+      phoneVerified: user.phoneNumberVerifiedAt !== null,
+      phoneNumberVerifiedAt: user.phoneNumberVerifiedAt,
       activeSessions,
       passwordUpdatedAt: user.passwordUpdatedAt,
       accountLocked: isLocked,
@@ -378,7 +786,10 @@ export class UserService {
 
     // Atomically consume challenge and mark email verified
     await prisma.$transaction(async (tx) => {
-      await OtpRepository.consumeChallenge(challenge.id, tx);
+      const consumed = await OtpRepository.consumeChallenge(challenge.id, tx);
+      if (!consumed) {
+        throw new OtpAlreadyUsedError();
+      }
       await UserRepository.markEmailVerified(user.id, new Date(), tx);
     });
 
@@ -415,7 +826,9 @@ export class UserService {
       OtpPurpose.EMAIL_VERIFICATION
     );
 
-    await defaultOtpDeliveryProvider.sendVerificationCode(user.email, plainOtp);
+    if (user.email) {
+      await defaultOtpDeliveryProvider.sendVerificationCode(user.email, plainOtp);
+    }
     logger.info(`Verification code resent for user ID: ${user.id}`);
 
     return {

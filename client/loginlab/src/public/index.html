@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
   <div class="app-background">
@@ -40,7 +41,14 @@
           <p>Sign in to your account powered by AuthForge</p>
         </div>
 
-        <form id="form-login" class="auth-form" onsubmit="return false;">
+        <!-- Auth Method Selector -->
+        <div class="method-toggle-container">
+          <button type="button" class="tab-btn active" id="tab-login-email">✉️ Email</button>
+          <button type="button" class="tab-btn" id="tab-login-phone">📱 Phone SMS</button>
+        </div>
+
+        <!-- Email Login Form -->
+        <form id="form-login" class="auth-form active" onsubmit="return false;">
           <div class="form-group">
             <label for="login-email">Email address</label>
             <input type="email" id="login-email" placeholder="name@company.com" required autocomplete="email">
@@ -55,9 +63,50 @@
           </div>
 
           <button type="submit" id="btn-login" class="btn btn-primary">
-            <span class="btn-text">Sign In</span>
+            <span class="btn-text">Sign In with Email</span>
           </button>
         </form>
+
+        <!-- Phone Login Form -->
+        <form id="form-login-phone" class="auth-form" onsubmit="return false;">
+          <div class="form-group">
+            <label for="login-phone-number">Phone Number (E.164)</label>
+            <input type="tel" id="login-phone-number" placeholder="+91 98765 43210" required autocomplete="tel">
+            <span class="field-hint">International format with country code (e.g. +91, +1)</span>
+          </div>
+
+          <div class="phone-auth-mode-selector">
+            <label class="radio-label">
+              <input type="radio" name="phone-auth-mode" value="otp" checked id="mode-phone-otp">
+              <span>Passwordless SMS OTP</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="phone-auth-mode" value="password" id="mode-phone-password">
+              <span>Phone Password</span>
+            </label>
+          </div>
+
+          <div class="form-group hidden" id="group-login-phone-password">
+            <div class="label-row">
+              <label for="login-phone-pass">Password</label>
+              <a href="#" class="link" id="link-forgot-phone-password">Forgot password?</a>
+            </div>
+            <input type="password" id="login-phone-pass" placeholder="••••••••" autocomplete="current-password">
+          </div>
+
+          <button type="submit" id="btn-login-phone" class="btn btn-primary">
+            <span class="btn-text">Send Sign-in Code</span>
+          </button>
+        </form>
+
+        <!-- Google Sign-In Container -->
+        <div class="oauth-divider" id="oauth-divider-login">
+          <span>or continue with</span>
+        </div>
+        <div class="oauth-container" id="oauth-container-login">
+          <div id="google-btn-login" class="google-btn-wrapper"></div>
+          <p id="google-disabled-note-login" class="oauth-fallback-note hidden">Google Sign-In is not configured</p>
+        </div>
 
         <div class="view-footer">
           <p>Don't have an account? <a href="#" class="link" id="link-to-register">Create account</a></p>
@@ -71,7 +120,14 @@
           <p>Get started with AuthForge secure authentication</p>
         </div>
 
-        <form id="form-register" class="auth-form" onsubmit="return false;">
+        <!-- Auth Method Selector -->
+        <div class="method-toggle-container">
+          <button type="button" class="tab-btn active" id="tab-reg-email">✉️ Email</button>
+          <button type="button" class="tab-btn" id="tab-reg-phone">📱 Phone Number</button>
+        </div>
+
+        <!-- Email Registration Form -->
+        <form id="form-register" class="auth-form active" onsubmit="return false;">
           <div class="form-row">
             <div class="form-group">
               <label for="reg-first-name">First name</label>
@@ -91,13 +147,52 @@
           <div class="form-group">
             <label for="reg-password">Password</label>
             <input type="password" id="reg-password" placeholder="Minimum 8 characters" required autocomplete="new-password">
-            <span class="field-hint">Must contain upper, lower, number & symbol</span>
+            <span class="field-hint">Must be at least 8 characters long</span>
           </div>
 
           <button type="submit" id="btn-register" class="btn btn-primary">
-            <span class="btn-text">Register Account</span>
+            <span class="btn-text">Register with Email</span>
           </button>
         </form>
+
+        <!-- Phone Registration Form -->
+        <form id="form-register-phone" class="auth-form" onsubmit="return false;">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="reg-phone-first-name">First name</label>
+              <input type="text" id="reg-phone-first-name" placeholder="Jane" autocomplete="given-name">
+            </div>
+            <div class="form-group">
+              <label for="reg-phone-last-name">Last name</label>
+              <input type="text" id="reg-phone-last-name" placeholder="Doe" autocomplete="family-name">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="reg-phone-number">Phone Number (E.164)</label>
+            <input type="tel" id="reg-phone-number" placeholder="+91 98765 43210" required autocomplete="tel">
+            <span class="field-hint">Include country code (e.g. +91, +1)</span>
+          </div>
+
+          <div class="form-group">
+            <label for="reg-phone-password">Password (Optional)</label>
+            <input type="password" id="reg-phone-password" placeholder="Leave blank for passwordless OTP" autocomplete="new-password">
+            <span class="field-hint">Optional: Set password or use passwordless SMS OTP</span>
+          </div>
+
+          <button type="submit" id="btn-register-phone" class="btn btn-primary">
+            <span class="btn-text">Register with Phone</span>
+          </button>
+        </form>
+
+        <!-- Google Sign-Up Container -->
+        <div class="oauth-divider" id="oauth-divider-register">
+          <span>or sign up with</span>
+        </div>
+        <div class="oauth-container" id="oauth-container-register">
+          <div id="google-btn-register" class="google-btn-wrapper"></div>
+          <p id="google-disabled-note-register" class="oauth-fallback-note hidden">Google Sign-In is not configured</p>
+        </div>
 
         <div class="view-footer">
           <p>Already have an account? <a href="#" class="link" id="link-to-login">Sign in</a></p>
@@ -111,10 +206,10 @@
           <p>Enter the 6-digit verification code sent to <strong id="verify-email-display">your email</strong></p>
         </div>
 
-        <form id="form-verify-email" class="auth-form" onsubmit="return false;">
+        <form id="form-verify-email" class="auth-form active" onsubmit="return false;">
           <div class="form-group">
             <label for="verify-otp">6-Digit Verification Code</label>
-            <input type="text" id="verify-otp" maxlength="6" placeholder="123456" required class="otp-input" inputmode="numeric">
+            <input type="text" id="verify-otp" maxlength="6" placeholder="123456" required class="otp-input" inputmode="numeric" autocomplete="one-time-code" autofocus>
           </div>
 
           <button type="submit" id="btn-verify-otp" class="btn btn-primary">
@@ -125,6 +220,13 @@
             <button type="button" id="btn-resend-otp" class="btn-link">Resend Code</button>
             <span id="resend-timer" class="timer-text"></span>
           </div>
+
+          <div class="dev-otp-helper">
+            <button type="button" id="btn-fetch-dev-otp" class="btn-dev-helper">
+              🛠️ Auto-Fill Dev Email OTP
+            </button>
+            <span class="dev-helper-note">Captured via Development Sandbox</span>
+          </div>
         </form>
 
         <div class="view-footer">
@@ -132,21 +234,73 @@
         </div>
       </section>
 
+      <!-- 3B. PHONE VERIFICATION & LOGIN OTP VIEW -->
+      <section id="view-verify-phone" class="view-section">
+        <div class="view-header">
+          <h2 id="phone-otp-title">Enter SMS Code</h2>
+          <p id="phone-otp-subtitle">Enter the 6-digit code sent to <strong id="verify-phone-display">+91...</strong></p>
+        </div>
+
+        <form id="form-verify-phone" class="auth-form active" onsubmit="return false;">
+          <div class="form-group">
+            <label for="verify-phone-otp">6-Digit SMS Code</label>
+            <input type="text" id="verify-phone-otp" maxlength="6" placeholder="123456" required class="otp-input" inputmode="numeric" autocomplete="one-time-code">
+          </div>
+
+          <button type="submit" id="btn-verify-phone-otp" class="btn btn-primary">
+            <span class="btn-text">Verify & Sign In</span>
+          </button>
+
+          <div class="resend-row">
+            <button type="button" id="btn-resend-phone-otp" class="btn-link">Resend SMS Code</button>
+            <span id="resend-phone-timer" class="timer-text"></span>
+          </div>
+
+          <div class="dev-otp-helper">
+            <button type="button" id="btn-fetch-dev-sms-otp" class="btn-dev-helper">
+              📱 Auto-Fill Dev SMS Code
+            </button>
+            <span class="dev-helper-note">Captured via Development SMS Sandbox</span>
+          </div>
+        </form>
+
+        <div class="view-footer">
+          <p><a href="#" class="link" id="link-phone-back-to-login">Back to Sign In</a></p>
+        </div>
+      </section>
+
       <!-- 4. FORGOT PASSWORD VIEW -->
       <section id="view-forgot" class="view-section">
         <div class="view-header">
           <h2>Reset password</h2>
-          <p>Enter your email to receive a password recovery code</p>
+          <p>Choose recovery method to receive a password reset code</p>
         </div>
 
-        <form id="form-forgot" class="auth-form" onsubmit="return false;">
+        <!-- Auth Method Selector -->
+        <div class="method-toggle-container">
+          <button type="button" class="tab-btn active" id="tab-forgot-email">✉️ Email</button>
+          <button type="button" class="tab-btn" id="tab-forgot-phone">📱 Phone SMS</button>
+        </div>
+
+        <form id="form-forgot" class="auth-form active" onsubmit="return false;">
           <div class="form-group">
             <label for="forgot-email">Email address</label>
             <input type="email" id="forgot-email" placeholder="name@company.com" required>
           </div>
 
           <button type="submit" id="btn-forgot" class="btn btn-primary">
-            <span class="btn-text">Send Recovery Code</span>
+            <span class="btn-text">Send Email Recovery Code</span>
+          </button>
+        </form>
+
+        <form id="form-forgot-phone" class="auth-form" onsubmit="return false;">
+          <div class="form-group">
+            <label for="forgot-phone-number">Phone Number (E.164)</label>
+            <input type="tel" id="forgot-phone-number" placeholder="+91 98765 43210" required>
+          </div>
+
+          <button type="submit" id="btn-forgot-phone" class="btn btn-primary">
+            <span class="btn-text">Send SMS Recovery Code</span>
           </button>
         </form>
 
@@ -159,18 +313,25 @@
       <section id="view-reset-verify" class="view-section">
         <div class="view-header">
           <h2>Enter recovery code</h2>
-          <p>Enter the 6-digit reset code sent to <strong id="reset-email-display">your email</strong></p>
+          <p>Enter the 6-digit reset code sent to <strong id="reset-target-display">your recipient</strong></p>
         </div>
 
-        <form id="form-reset-verify" class="auth-form" onsubmit="return false;">
+        <form id="form-reset-verify" class="auth-form active" onsubmit="return false;">
           <div class="form-group">
             <label for="reset-otp">6-Digit Reset Code</label>
-            <input type="text" id="reset-otp" maxlength="6" placeholder="654321" required class="otp-input" inputmode="numeric">
+            <input type="text" id="reset-otp" maxlength="6" placeholder="654321" required class="otp-input" inputmode="numeric" autocomplete="one-time-code">
           </div>
 
           <button type="submit" id="btn-reset-verify" class="btn btn-primary">
             <span class="btn-text">Verify Reset Code</span>
           </button>
+
+          <div class="dev-otp-helper">
+            <button type="button" id="btn-fetch-dev-reset-otp" class="btn-dev-helper">
+              🛠️ Auto-Fill Dev Reset Code
+            </button>
+            <span class="dev-helper-note">Check AuthForge server console or click to auto-fill</span>
+          </div>
         </form>
       </section>
 
@@ -181,7 +342,7 @@
           <p>Choose a strong, unique password for your account</p>
         </div>
 
-        <form id="form-reset-complete" class="auth-form" onsubmit="return false;">
+        <form id="form-reset-complete" class="auth-form active" onsubmit="return false;">
           <div class="form-group">
             <label for="reset-new-password">New Password</label>
             <input type="password" id="reset-new-password" placeholder="••••••••" required autocomplete="new-password">
@@ -198,7 +359,10 @@
         <div class="dashboard-header">
           <div class="user-greeting">
             <h2 id="dash-greeting">Welcome, User</h2>
-            <span class="user-email-badge" id="dash-email">user@example.com</span>
+            <div class="user-identities">
+              <span class="user-badge" id="dash-email">user@example.com</span>
+              <span class="user-badge" id="dash-phone">+91...</span>
+            </div>
           </div>
           <button type="button" id="btn-logout" class="btn btn-secondary btn-sm">Sign Out</button>
         </div>
@@ -207,26 +371,60 @@
           <!-- Profile & Security Status Widget -->
           <div class="widget-card">
             <div class="widget-title">
-              <span class="icon">🛡️</span> Account Security Status
+              <span class="icon">🛡️</span> Security & Identities
             </div>
             <div class="stat-list">
               <div class="stat-item">
-                <span class="stat-label">Email Verification</span>
+                <span class="stat-label">Email Verified</span>
                 <span class="badge" id="sec-email-verified">Verified</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Phone Verified</span>
+                <span class="badge" id="sec-phone-verified">Verified</span>
               </div>
               <div class="stat-item">
                 <span class="stat-label">Active Sessions</span>
                 <span class="stat-value" id="sec-active-sessions">1</span>
               </div>
               <div class="stat-item">
-                <span class="stat-label">Account Lockout Status</span>
-                <span class="badge badge-success" id="sec-locked-status">Normal (Unlocked)</span>
+                <span class="stat-label">Account Lockout</span>
+                <span class="badge badge-success" id="sec-locked-status">Normal</span>
               </div>
               <div class="stat-item">
-                <span class="stat-label">Last Password Change</span>
-                <span class="stat-value" id="sec-password-updated">Just now</span>
+                <span class="stat-label">Google Identity</span>
+                <span class="badge" id="sec-google-linked">Not Linked</span>
               </div>
             </div>
+            <div id="google-link-section" class="hidden" style="margin-top: 14px; border-top: 1px solid var(--card-border); padding-top: 12px;">
+              <span class="field-hint" style="display: block; margin-bottom: 8px;">Link your Google Account:</span>
+              <div id="google-btn-link" class="google-btn-wrapper"></div>
+            </div>
+          </div>
+
+          <!-- Update Phone Widget -->
+          <div class="widget-card">
+            <div class="widget-title">
+              <span class="icon">📱</span> Update Phone Number
+            </div>
+            <form id="form-change-phone" onsubmit="return false;">
+              <div class="form-group">
+                <label for="new-phone-input">New Phone Number (E.164)</label>
+                <input type="tel" id="new-phone-input" placeholder="+91 98765 43210" required>
+              </div>
+              <button type="submit" id="btn-request-phone-change" class="btn btn-primary btn-sm">
+                Send Verification OTP
+              </button>
+            </form>
+
+            <form id="form-verify-phone-change" class="hidden" style="margin-top: 12px;" onsubmit="return false;">
+              <div class="form-group">
+                <label for="change-phone-otp">Enter 6-Digit SMS Code</label>
+                <input type="text" id="change-phone-otp" maxlength="6" placeholder="123456" required class="otp-input">
+              </div>
+              <button type="submit" id="btn-confirm-phone-change" class="btn btn-primary btn-sm">
+                Confirm & Update Phone
+              </button>
+            </form>
           </div>
 
           <!-- Change Password Widget -->
@@ -244,7 +442,7 @@
                 <input type="password" id="change-new-pass" required placeholder="••••••••">
               </div>
               <button type="submit" id="btn-change-password" class="btn btn-primary btn-sm">
-                Update & Invalidate Other Sessions
+                Update & Invalidate Sessions
               </button>
             </form>
           </div>

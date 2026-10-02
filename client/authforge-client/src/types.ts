@@ -1,10 +1,12 @@
 export interface User {
   id: string;
-  email: string;
+  email: string | null;
+  phoneNumber: string | null;
   firstName: string | null;
   lastName: string | null;
   isActive: boolean;
   emailVerifiedAt: string | null;
+  phoneNumberVerifiedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -39,9 +41,12 @@ export interface Session {
 }
 
 export interface SecurityStatus {
-  email: string;
+  email: string | null;
   emailVerified: boolean;
   emailVerifiedAt: string | null;
+  phoneNumber: string | null;
+  phoneVerified: boolean;
+  phoneNumberVerifiedAt: string | null;
   activeSessions: number;
   passwordUpdatedAt: string;
   accountLocked: boolean;
@@ -53,14 +58,19 @@ export interface MessageResponse {
   message: string;
 }
 
+export interface VerificationResponse {
+  verified: boolean;
+  message?: string;
+}
+
 export interface EmailVerificationResponse {
   verified: boolean;
-  message: string;
+  message?: string;
 }
 
 export interface PasswordResetVerifyResponse {
   resetToken: string;
-  message: string;
+  message?: string;
 }
 
 export interface ApiErrorDetail {
@@ -82,8 +92,20 @@ export interface RegisterParams {
   lastName?: string;
 }
 
+export interface PhoneRegisterParams {
+  phoneNumber: string;
+  password?: string;
+  firstName?: string;
+  lastName?: string;
+}
+
 export interface LoginParams {
   email: string;
+  password: string;
+}
+
+export interface PhonePasswordLoginParams {
+  phoneNumber: string;
   password: string;
 }
 

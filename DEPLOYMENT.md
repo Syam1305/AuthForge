@@ -45,7 +45,73 @@ REFRESH_TOKEN_TTL_DAYS=7
 LOGIN_MAX_FAILED_ATTEMPTS=5
 LOGIN_LOCKOUT_MINUTES=15
 SECURITY_EVENT_RETENTION_DAYS=90
+
+# SMTP Email Delivery (Gmail / Custom SMTP)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=your-service-account@gmail.com
+SMTP_PASSWORD=your-16-char-google-app-password
+SMTP_FROM="AuthForge <your-service-account@gmail.com>"
+
+# SMS Delivery Gateway (MSG91 / Twilio)
+# Options: msg91 | twilio | development
+SMS_PROVIDER=msg91
+
+# MSG91 Production Settings (SendOTP V5 API)
+MSG91_AUTH_KEY=your_msg91_auth_key_here
+MSG91_TEMPLATE_ID=your_dlt_approved_template_id
+# Optional purpose-specific template overrides:
+MSG91_VERIFY_TEMPLATE_ID=your_verify_template_id
+MSG91_LOGIN_TEMPLATE_ID=your_login_template_id
+MSG91_RESET_TEMPLATE_ID=your_reset_template_id
+
+# Alternative: Twilio Production Settings
+# SMS_PROVIDER=twilio
+# SMS_API_KEY=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+# SMS_API_SECRET=your_twilio_auth_token
+# SMS_FROM=+12055550199
+
+# Google Authentication (Phase 10)
+GOOGLE_AUTH_ENABLED=true
+GOOGLE_CLIENT_ID=your-google-web-client-id.apps.googleusercontent.com
 ```
+
+---
+
+## 2.1. Google Cloud / Identity Services Setup
+
+To configure "Continue with Google" for your applications:
+
+1. **Google Cloud Console:** Navigate to [Google Cloud Console](https://console.cloud.google.com/) -> **APIs & Services** -> **Credentials**.
+2. **OAuth Consent Screen:**
+   * Configure User Type (External).
+   * App name: `AuthForge` / `YourAppName`.
+   * User support email & Developer contact info.
+   * Scopes requested: Minimum scopes only (`openid`, `profile`, `email`). **Do not request sensitive scopes (Gmail, Drive, Contacts).**
+   * If in "Testing" mode, add test user Google accounts to the test user list.
+3. **Create Web OAuth Client ID:**
+   * Application type: **Web application**.
+   * Name: `AuthForge Web Client`.
+   * **Authorized JavaScript origins:**
+     * Local Development: `http://localhost:3000` (LoginLab), `http://localhost:4000`
+     * Production: `https://loginlab.yourdomain.com` (Must use HTTPS in production).
+   * **Authorized redirect URIs:** Google Identity Services (GIS) button operates via direct popups/one-tap callbacks and does not require server redirect URIs unless standard OAuth code flow is used.
+4. **Copy Client ID:** Set `GOOGLE_CLIENT_ID` in backend `.env` and client configurations. **Never expose the Google Client Secret.**
+
+---
+
+## 2.2. Indian DLT Compliance & MSG91 Setup
+
+For production SMS delivery to Indian mobile numbers (+91), the Telecom Regulatory Authority of India (TRAI) mandates DLT (Distributed Ledger Technology) registration:
+
+1. **Entity Registration:** Register your organization on an approved DLT portal (e.g., Vilpower / Jio / Airtel / Vodafone DLT).
+2. **Sender ID / Header Approval:** Register a 6-character alphabetic header (e.g., `AUTHFR`) under Service Implicit category for transactional OTP messages.
+3. **Content Template Registration:** Register SMS content templates with dynamic variables (e.g., `Your AuthForge verification code is {#var#}. Valid for 10 minutes.`).
+4. **MSG91 Dashboard Mapping:** Add the approved DLT Entity ID, Sender ID, and Template ID into the MSG91 portal to obtain the MSG91 `template_id`.
+5. **AuthForge Configuration:** Set `SMS_PROVIDER=msg91`, `MSG91_AUTH_KEY=<your_key>`, and `MSG91_TEMPLATE_ID=<template_id>` in AuthForge backend `.env`.
+
+
 
 ---
 

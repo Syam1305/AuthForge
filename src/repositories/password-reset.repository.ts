@@ -37,19 +37,24 @@ export class PasswordResetRepository {
   }
 
   /**
-   * Marks a reset authorization as consumed.
+   * Atomically marks a reset authorization as consumed.
+   * Returns boolean indicating whether this call consumed the authorization (guards against concurrent race condition).
    */
   public static async consumeAuthorization(
     id: string,
     tx?: Prisma.TransactionClient
-  ): Promise<PasswordResetAuthorization> {
+  ): Promise<boolean> {
     const client = tx || prisma;
-    return client.passwordResetAuthorization.update({
-      where: { id },
+    const result = await client.passwordResetAuthorization.updateMany({
+      where: {
+        id,
+        consumedAt: null
+      },
       data: {
         consumedAt: new Date()
       }
     });
+    return result.count === 1;
   }
 
   /**

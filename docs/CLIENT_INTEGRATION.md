@@ -229,7 +229,76 @@ class AuthForgeService {
 
 ---
 
-## 5. Token Handling & Single-Flight Refresh Architecture
+## 5. Phone Authentication SDK Integration (Phase 9)
+
+```typescript
+// 1. Passwordless Phone Login Request
+await client.requestPhoneLogin('+919876543210');
+
+// 2. Verify Phone OTP & Establish Session
+const loginResponse = await client.verifyPhoneLogin('+919876543210', '123456');
+
+// 3. Register with Phone Number
+const registerResponse = await client.registerWithPhone({
+  phoneNumber: '+919876543210',
+  firstName: 'Jane',
+  lastName: 'Doe'
+});
+
+// 4. Verify Phone Registration OTP
+await client.verifyPhone('+919876543210', '123456');
+
+// 5. Change Phone Number (Authenticated)
+await client.requestPhoneChange('+919988776655');
+await client.verifyPhoneChange('+919988776655', '654321');
+```
+
+---
+
+## 6. Google Authentication Integration (Phase 10)
+
+### 6.1 Google Identity Services (GIS) Web Integration
+Include the official Google Identity Services script in your HTML:
+```html
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+```
+
+Initialize GIS and render the Google button:
+```typescript
+window.google.accounts.id.initialize({
+  client_id: 'YOUR_GOOGLE_WEB_CLIENT_ID.apps.googleusercontent.com',
+  callback: async (response) => {
+    // 1. Send Google ID token to AuthForge
+    try {
+      const authResult = await client.loginWithGoogle(response.credential);
+      console.log('Logged in user:', authResult.user);
+    } catch (error: any) {
+      if (error.code === 'GOOGLE_LINK_REQUIRED') {
+        // Existing account detected — user must login with password and link Google
+        alert('An account with this email exists. Please log in with your password to link Google.');
+      } else {
+        alert(error.message);
+      }
+    }
+  }
+});
+
+window.google.accounts.id.renderButton(
+  document.getElementById('google-btn-container'),
+  { theme: 'filled_black', size: 'large', text: 'continue_with' }
+);
+```
+
+### 6.2 Explicit Account Linking (Authenticated User)
+```typescript
+// Link Google identity to current authenticated session
+const linkResult = await client.linkGoogle(googleIdToken);
+console.log(linkResult.message); // "Google account linked successfully."
+```
+
+---
+
+## 7. Token Handling & Single-Flight Refresh Architecture
 
 ```text
 Request 1 ──┐
@@ -249,7 +318,7 @@ Request 3 ──┘                      │
 
 ---
 
-## 6. Non-Negotiable Client Security Rules
+## 8. Non-Negotiable Client Security Rules
 
 1. **Never connect directly to PostgreSQL:** Clients communicate exclusively via HTTPS REST endpoints.
 2. **Never ship database credentials or JWT secrets in client code:** All signing and validation occurs server-side.
@@ -258,3 +327,4 @@ Request 3 ──┘                      │
 5. **Never blindly retry refresh requests:** AuthForge refresh tokens are single-use; blindly retrying a consumed token triggers replay detection and revokes the session.
 6. **Treat AuthForge as the authorization authority:** Ownership checks are strictly enforced by the backend.
 7. **Always enforce HTTPS in production.**
+

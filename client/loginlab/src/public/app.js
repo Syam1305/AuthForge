@@ -7,9 +7,17 @@ class LoginLabApp {
     this.refreshToken = null;
     this.currentUser = null;
     this.pendingEmail = null;
+    this.pendingPassword = null;
+    this.pendingPhone = null;
+    this.pendingPhonePassword = null;
+    this.pendingPhoneMode = 'login'; // 'login' | 'verify'
+    this.resetMode = 'email'; // 'email' | 'phone'
     this.resetToken = null;
     this.resendCooldownTimer = null;
+    this.resendPhoneCooldownTimer = null;
     this.refreshPromise = null;
+    this.googleClientId = '';
+    this.googleAuthEnabled = false;
   }
 
   async init() {
@@ -20,11 +28,18 @@ class LoginLabApp {
         if (configData.authforgeBaseUrl) {
           this.baseUrl = configData.authforgeBaseUrl.replace(/\/+$/, '');
         }
+        if (configData.googleClientId) {
+          this.googleClientId = configData.googleClientId;
+        }
+        if (configData.googleAuthEnabled !== undefined) {
+          this.googleAuthEnabled = Boolean(configData.googleAuthEnabled);
+        }
       }
     } catch {
-      // Use fallback
+      // Use default fallback
     }
 
+    this.setupGoogleIdentityServices();
     this.bindEvents();
     this.restoreSession();
   }
@@ -120,7 +135,6 @@ class LoginLabApp {
       return await this.request(path, { ...options, token: this.accessToken });
     } catch (error) {
       if (error.status === 401 && error.code !== 'SESSION_REVOKED') {
-        // Access token expired -> perform single-flight refresh
         await this.refreshTokens();
         return await this.request(path, { ...options, token: this.accessToken });
       }
@@ -164,7 +178,7 @@ class LoginLabApp {
     this.switchView('login');
   }
 
-  // --- 3. VIEW ROUTING ---
+  // --- 3. VIEW ROUTING & TOASTS ---
   switchView(viewName) {
     document.querySelectorAll('.view-section').forEach((el) => el.classList.remove('active'));
     const target = document.getElementById(`view-${viewName}`);
@@ -184,10 +198,10 @@ class LoginLabApp {
 
     setTimeout(() => {
       toast.remove();
-    }, 4000);
+    }, 4500);
   }
 
-  // --- 4. EVENT BINDING ---
+  // --- 4. EVENT BINDINGS ---
   bindEvents() {
     // Navigation Links
     document.getElementById('link-to-register')?.addEventListener('click', (e) => {
@@ -200,9 +214,25 @@ class LoginLabApp {
       this.switchView('login');
     });
 
+    document.getElementById('link-back-to-login')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.switchView('login');
+    });
+
+    document.getElementById('link-phone-back-to-login')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.switchView('login');
+    });
+
     document.getElementById('link-forgot-password')?.addEventListener('click', (e) => {
       e.preventDefault();
       this.switchView('forgot');
+    });
+
+    document.getElementById('link-forgot-phone-password')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.switchView('forgot');
+      document.getElementById('tab-forgot-phone')?.click();
     });
 
     document.getElementById('link-forgot-to-login')?.addEventListener('click', (e) => {
@@ -210,30 +240,338 @@ class LoginLabApp {
       this.switchView('login');
     });
 
-    document.getElementById('link-back-to-login')?.addEventListener('click', (e) => {
-      e.preventDefault();
-      this.switchView('login');
+    // Tab Buttons (Login Email / Phone)
+    const tabLoginEmail = document.getElementById('tab-login-email');
+    const tabLoginPhone = document.getElementById('tab-login-phone');
+    const formLogin = document.getElementById('form-login');
+    const formLoginPhone = document.getElementById('form-login-phone');
+
+    tabLoginEmail?.addEventListener('click', () => {
+      tabLoginEmail.classList.add('active');
+      tabLoginPhone?.classList.remove('active');
+      formLogin?.classList.add('active');
+      formLoginPhone?.classList.remove('active');
+    });
+
+    tabLoginPhone?.addEventListener('click', () => {
+      tabLoginPhone.classList.add('active');
+      tabLoginEmail?.classList.remove('active');
+      formLoginPhone?.classList.add('active');
+      formLogin?.classList.remove('active');
+    });
+
+    // Radio: Phone Auth Mode (OTP vs Password)
+    const modePhoneOtp = document.getElementById('mode-phone-otp');
+    const modePhonePass = document.getElementById('mode-phone-password');
+    const groupPhonePass = document.getElementById('group-login-phone-password');
+    const btnLoginPhone = document.getElementById('btn-login-phone');
+
+    modePhoneOtp?.addEventListener('change', () => {
+      if (modePhoneOtp.checked) {
+        groupPhonePass?.classList.add('hidden');
+        if (btnLoginPhone) btnLoginPhone.querySelector('.btn-text').textContent = 'Send Sign-in Code';
+      }
+    });
+
+    modePhonePass?.addEventListener('change', () => {
+      if (modePhonePass.checked) {
+        groupPhonePass?.classList.remove('hidden');
+        if (btnLoginPhone) btnLoginPhone.querySelector('.btn-text').textContent = 'Sign In with Password';
+      }
+    });
+
+    // Tab Buttons (Register Email / Phone)
+    const tabRegEmail = document.getElementById('tab-reg-email');
+    const tabRegPhone = document.getElementById('tab-reg-phone');
+    const formRegister = document.getElementById('form-register');
+    const formRegisterPhone = document.getElementById('form-register-phone');
+
+    tabRegEmail?.addEventListener('click', () => {
+      tabRegEmail.classList.add('active');
+      tabRegPhone?.classList.remove('active');
+      formRegister?.classList.add('active');
+      formRegisterPhone?.classList.remove('active');
+    });
+
+    tabRegPhone?.addEventListener('click', () => {
+      tabRegPhone.classList.add('active');
+      tabRegEmail?.classList.remove('active');
+      formRegisterPhone?.classList.add('active');
+      formRegister?.classList.remove('active');
+    });
+
+    // Tab Buttons (Forgot Email / Phone)
+    const tabForgotEmail = document.getElementById('tab-forgot-email');
+    const tabForgotPhone = document.getElementById('tab-forgot-phone');
+    const formForgot = document.getElementById('form-forgot');
+    const formForgotPhone = document.getElementById('form-forgot-phone');
+
+    tabForgotEmail?.addEventListener('click', () => {
+      tabForgotEmail.classList.add('active');
+      tabForgotPhone?.classList.remove('active');
+      formForgot?.classList.add('active');
+      formForgotPhone?.classList.remove('active');
+      this.resetMode = 'email';
+    });
+
+    tabForgotPhone?.addEventListener('click', () => {
+      tabForgotPhone.classList.add('active');
+      tabForgotEmail?.classList.remove('active');
+      formForgotPhone?.classList.add('active');
+      formForgot?.classList.remove('active');
+      this.resetMode = 'phone';
     });
 
     // Form Submissions
-    document.getElementById('form-login')?.addEventListener('submit', (e) => this.handleLogin(e));
-    document.getElementById('form-register')?.addEventListener('submit', (e) => this.handleRegister(e));
-    document.getElementById('form-verify-email')?.addEventListener('submit', (e) => this.handleVerifyEmail(e));
-    document.getElementById('btn-resend-otp')?.addEventListener('click', () => this.handleResendOtp());
-    document.getElementById('form-forgot')?.addEventListener('submit', (e) => this.handleForgotPassword(e));
-    document.getElementById('form-reset-verify')?.addEventListener('submit', (e) => this.handleResetVerify(e));
-    document.getElementById('form-reset-complete')?.addEventListener('submit', (e) => this.handleResetComplete(e));
-    document.getElementById('form-change-password')?.addEventListener('submit', (e) => this.handleChangePassword(e));
+    document.getElementById('form-login')?.addEventListener('submit', () => this.handleEmailLogin());
+    document.getElementById('form-login-phone')?.addEventListener('submit', () => this.handlePhoneLogin());
+    document.getElementById('form-register')?.addEventListener('submit', () => this.handleEmailRegister());
+    document.getElementById('form-register-phone')?.addEventListener('submit', () => this.handlePhoneRegister());
+    document.getElementById('form-verify-email')?.addEventListener('submit', () => this.handleVerifyEmailOtp());
+    document.getElementById('form-verify-phone')?.addEventListener('submit', () => this.handleVerifyPhoneOtp());
+    document.getElementById('form-forgot')?.addEventListener('submit', () => this.handleEmailForgot());
+    document.getElementById('form-forgot-phone')?.addEventListener('submit', () => this.handlePhoneForgot());
+    document.getElementById('form-reset-verify')?.addEventListener('submit', () => this.handleVerifyResetOtp());
+    document.getElementById('form-reset-complete')?.addEventListener('submit', () => this.handleCompleteReset());
+
+    // Resend OTP Buttons
+    document.getElementById('btn-resend-otp')?.addEventListener('click', () => this.handleResendEmailOtp());
+    document.getElementById('btn-resend-phone-otp')?.addEventListener('click', () => this.handleResendPhoneOtp());
+
+    // Dev OTP Helper Buttons
+    document.getElementById('btn-fetch-dev-otp')?.addEventListener('click', () => this.fetchDevEmailOtp('verify'));
+    document.getElementById('btn-fetch-dev-sms-otp')?.addEventListener('click', () => this.fetchDevSmsOtp());
+    document.getElementById('btn-fetch-dev-reset-otp')?.addEventListener('click', () => this.fetchDevResetOtp());
+
+    // Dashboard Buttons
     document.getElementById('btn-logout')?.addEventListener('click', () => this.handleLogout());
     document.getElementById('btn-logout-all')?.addEventListener('click', () => this.handleLogoutAll());
+    document.getElementById('form-change-password')?.addEventListener('submit', () => this.handleChangePassword());
+    document.getElementById('form-change-phone')?.addEventListener('submit', () => this.handleRequestPhoneChange());
+    document.getElementById('form-verify-phone-change')?.addEventListener('submit', () => this.handleVerifyPhoneChange());
   }
 
-  // --- 5. AUTH FLOW HANDLERS ---
-  async handleLogin(e) {
-    e.preventDefault();
+  // --- 4B. UI HELPERS & COOLDOWNS ---
+  setButtonLoading(button, isLoading, loadingText) {
+    if (!button) return;
+    button.disabled = isLoading;
+    const btnText = button.querySelector('.btn-text');
+    if (isLoading) {
+      if (!button.dataset.originalText && btnText) {
+        button.dataset.originalText = btnText.textContent;
+      }
+      if (btnText) btnText.textContent = loadingText || 'Loading...';
+      button.classList.add('loading');
+    } else {
+      if (btnText && button.dataset.originalText) {
+        btnText.textContent = button.dataset.originalText;
+      }
+      button.classList.remove('loading');
+    }
+  }
+
+  startResendCooldown(durationSeconds = 60) {
+    if (this.resendCooldownTimer) {
+      clearInterval(this.resendCooldownTimer);
+      this.resendCooldownTimer = null;
+    }
+
+    const resendBtn = document.getElementById('btn-resend-otp');
+    const timerLabel = document.getElementById('resend-timer');
+    if (!resendBtn) return;
+
+    let remaining = durationSeconds;
+    resendBtn.disabled = true;
+
+    const updateLabel = () => {
+      if (timerLabel) {
+        timerLabel.textContent = `(resend in ${remaining}s)`;
+      }
+    };
+
+    updateLabel();
+
+    this.resendCooldownTimer = setInterval(() => {
+      remaining -= 1;
+      if (remaining <= 0) {
+        clearInterval(this.resendCooldownTimer);
+        this.resendCooldownTimer = null;
+        resendBtn.disabled = false;
+        if (timerLabel) {
+          timerLabel.textContent = '';
+        }
+      } else {
+        updateLabel();
+      }
+    }, 1000);
+  }
+
+  startResendPhoneCooldown(durationSeconds = 60) {
+    if (this.resendPhoneCooldownTimer) {
+      clearInterval(this.resendPhoneCooldownTimer);
+      this.resendPhoneCooldownTimer = null;
+    }
+
+    const resendBtn = document.getElementById('btn-resend-phone-otp');
+    const timerLabel = document.getElementById('resend-phone-timer');
+    if (!resendBtn) return;
+
+    let remaining = durationSeconds;
+    resendBtn.disabled = true;
+
+    const updateLabel = () => {
+      if (timerLabel) {
+        timerLabel.textContent = `(resend in ${remaining}s)`;
+      }
+    };
+
+    updateLabel();
+
+    this.resendPhoneCooldownTimer = setInterval(() => {
+      remaining -= 1;
+      if (remaining <= 0) {
+        clearInterval(this.resendPhoneCooldownTimer);
+        this.resendPhoneCooldownTimer = null;
+        resendBtn.disabled = false;
+        if (timerLabel) {
+          timerLabel.textContent = '';
+        }
+      } else {
+        updateLabel();
+      }
+    }, 1000);
+  }
+
+  // --- 5. AUTHENTICATION ACTIONS ---
+
+  // --- 5A. GOOGLE IDENTITY SERVICES (GIS) INTEGRATION ---
+  setupGoogleIdentityServices() {
+    const isConfigured = Boolean(this.googleAuthEnabled && this.googleClientId);
+
+    const loginNote = document.getElementById('google-disabled-note-login');
+    const regNote = document.getElementById('google-disabled-note-register');
+
+    if (!isConfigured) {
+      if (loginNote) loginNote.classList.remove('hidden');
+      if (regNote) regNote.classList.remove('hidden');
+      return;
+    }
+
+    if (loginNote) loginNote.classList.add('hidden');
+    if (regNote) regNote.classList.add('hidden');
+
+    const tryInitGis = () => {
+      if (window.google?.accounts?.id) {
+        try {
+          window.google.accounts.id.initialize({
+            client_id: this.googleClientId,
+            callback: (res) => this.handleGoogleCallback(res),
+            auto_select: false,
+            cancel_on_tap_outside: true
+          });
+
+          const loginBtnWrapper = document.getElementById('google-btn-login');
+          if (loginBtnWrapper) {
+            window.google.accounts.id.renderButton(loginBtnWrapper, {
+              theme: 'filled_black',
+              size: 'large',
+              text: 'continue_with',
+              shape: 'rectangular',
+              width: 320
+            });
+          }
+
+          const regBtnWrapper = document.getElementById('google-btn-register');
+          if (regBtnWrapper) {
+            window.google.accounts.id.renderButton(regBtnWrapper, {
+              theme: 'filled_black',
+              size: 'large',
+              text: 'signup_with',
+              shape: 'rectangular',
+              width: 320
+            });
+          }
+
+          const linkBtnWrapper = document.getElementById('google-btn-link');
+          if (linkBtnWrapper) {
+            window.google.accounts.id.renderButton(linkBtnWrapper, {
+              theme: 'outline',
+              size: 'medium',
+              text: 'continue_with',
+              shape: 'rectangular',
+              width: 240
+            });
+          }
+        } catch (e) {
+          console.warn('GIS button render error:', e);
+        }
+      } else {
+        setTimeout(tryInitGis, 250);
+      }
+    };
+
+    tryInitGis();
+  }
+
+  async handleGoogleCallback(response) {
+    if (!response?.credential) {
+      this.toast('No Google credential received.', 'error');
+      return;
+    }
+
+    const isDashboardActive = document.getElementById('view-dashboard')?.classList.contains('active');
+    if (isDashboardActive && this.accessToken) {
+      await this.handleGoogleLink(response.credential);
+    } else {
+      await this.handleGoogleLogin(response.credential);
+    }
+  }
+
+  async handleGoogleLogin(credential) {
+    this.setAuthState('loading');
+    try {
+      const data = await this.request('/api/v1/auth/google', {
+        method: 'POST',
+        body: { credential }
+      });
+
+      this.saveTokens(data.accessToken, data.refreshToken);
+      this.toast('Signed in with Google successfully!', 'success');
+      this.loadDashboard();
+    } catch (error) {
+      this.setAuthState('unauthenticated');
+      if (error.code === 'GOOGLE_LINK_REQUIRED') {
+        this.toast(
+          'An account with this email already exists. Please sign in with your email/password and link your Google account in Security settings.',
+          'warning'
+        );
+      } else {
+        this.toast(error.message || 'Google sign-in failed.', 'error');
+      }
+    }
+  }
+
+  async handleGoogleLink(credential) {
+    try {
+      const result = await this.authenticatedRequest('/api/v1/auth/identities/google/link', {
+        method: 'POST',
+        body: { credential }
+      });
+
+      this.toast(result.message || 'Google account linked successfully!', 'success');
+      this.loadDashboard();
+    } catch (error) {
+      this.toast(error.message || 'Failed to link Google account.', 'error');
+    }
+  }
+
+  // Email Login
+  async handleEmailLogin() {
+    const btn = document.getElementById('btn-login');
     const email = document.getElementById('login-email').value.trim();
     const password = document.getElementById('login-password').value;
 
+    this.setButtonLoading(btn, true, 'Signing in...');
     try {
       const data = await this.request('/api/v1/auth/login', {
         method: 'POST',
@@ -241,101 +579,380 @@ class LoginLabApp {
       });
 
       this.saveTokens(data.accessToken, data.refreshToken);
-      this.currentUser = data.user;
-      this.toast('Sign in successful!', 'success');
+      this.toast('Signed in successfully!', 'success');
       this.loadDashboard();
-    } catch (err) {
-      if (err.code === 'ACCOUNT_LOCKED') {
-        this.toast('Account is temporarily locked due to excessive failed attempts.', 'error');
-      } else if (err.code === 'INVALID_CREDENTIALS') {
-        this.toast('Invalid email or password.', 'error');
-      } else {
-        this.toast(err.message, 'error');
+    } catch (error) {
+      this.toast(error.message, 'error');
+    } finally {
+      this.setButtonLoading(btn, false);
+    }
+  }
+
+  // Phone Login
+  async handlePhoneLogin() {
+    const btn = document.getElementById('btn-login-phone');
+    const phoneNumber = document.getElementById('login-phone-number').value.trim();
+    const isPasswordMode = document.getElementById('mode-phone-password').checked;
+
+    if (isPasswordMode) {
+      const password = document.getElementById('login-phone-pass').value;
+      this.setButtonLoading(btn, true, 'Signing in...');
+      try {
+        const data = await this.request('/api/v1/auth/phone/login', {
+          method: 'POST',
+          body: { phoneNumber, password }
+        });
+
+        this.saveTokens(data.accessToken, data.refreshToken);
+        this.toast('Signed in successfully!', 'success');
+        this.loadDashboard();
+      } catch (error) {
+        this.toast(error.message, 'error');
+      } finally {
+        this.setButtonLoading(btn, false);
+      }
+    } else {
+      // Passwordless SMS OTP
+      this.setButtonLoading(btn, true, 'Sending SMS Code...');
+      try {
+        await this.request('/api/v1/auth/phone/login/request', {
+          method: 'POST',
+          body: { phoneNumber }
+        });
+
+        this.pendingPhone = phoneNumber;
+        this.pendingPhonePassword = null;
+        this.pendingPhoneMode = 'login';
+        
+        // 1. Switch view first so DOM elements are mounted & active
+        this.switchView('verify-phone');
+
+        // 2. Safely update headers and display
+        const titleEl = document.getElementById('phone-otp-title');
+        if (titleEl) titleEl.textContent = 'Phone Sign-In';
+
+        const displayEl = document.getElementById('verify-phone-display');
+        if (displayEl) {
+          displayEl.textContent = phoneNumber;
+        }
+
+        const otpInput = document.getElementById('verify-phone-otp');
+        if (otpInput) {
+          otpInput.value = '';
+          setTimeout(() => otpInput.focus(), 100);
+        }
+
+        this.startResendPhoneCooldown(60);
+        this.toast('Verification code sent to your phone!', 'info');
+      } catch (error) {
+        this.toast(error.message, 'error');
+      } finally {
+        this.setButtonLoading(btn, false);
       }
     }
   }
 
-  async handleRegister(e) {
-    e.preventDefault();
+  // Email Registration
+  async handleEmailRegister() {
+    const btn = document.getElementById('btn-register');
     const firstName = document.getElementById('reg-first-name').value.trim();
     const lastName = document.getElementById('reg-last-name').value.trim();
     const email = document.getElementById('reg-email').value.trim();
     const password = document.getElementById('reg-password').value;
 
+    this.setButtonLoading(btn, true, 'Creating account...');
     try {
       await this.request('/api/v1/auth/register', {
         method: 'POST',
-        body: { firstName, lastName, email, password }
+        body: { email, password, firstName: firstName || undefined, lastName: lastName || undefined }
       });
 
       this.pendingEmail = email;
-      document.getElementById('verify-email-display').textContent = email;
-      this.toast('Account registered! Verification code sent to email.', 'success');
+      this.pendingPassword = password;
+      
       this.switchView('verify-email');
-      this.startResendCooldown();
-    } catch (err) {
-      this.toast(err.message, 'error');
+      const verifyEmailDisplay = document.getElementById('verify-email-display');
+      if (verifyEmailDisplay) verifyEmailDisplay.textContent = email;
+      
+      const otpInput = document.getElementById('verify-otp');
+      if (otpInput) {
+        otpInput.value = '';
+        setTimeout(() => otpInput.focus(), 100);
+      }
+
+      this.startResendCooldown(60);
+      this.toast('Account created! Please enter the 6-digit verification code.', 'success');
+    } catch (error) {
+      this.toast(error.message, 'error');
+    } finally {
+      this.setButtonLoading(btn, false);
     }
   }
 
-  async handleVerifyEmail(e) {
-    e.preventDefault();
-    const otp = document.getElementById('verify-otp').value.trim();
+  // Phone Registration
+  async handlePhoneRegister() {
+    const btn = document.getElementById('btn-register-phone');
+    const firstName = document.getElementById('reg-phone-first-name').value.trim();
+    const lastName = document.getElementById('reg-phone-last-name').value.trim();
+    const phoneNumber = document.getElementById('reg-phone-number').value.trim();
+    const password = document.getElementById('reg-phone-password').value;
 
+    this.setButtonLoading(btn, true, 'Registering...');
+    try {
+      await this.request('/api/v1/auth/phone/register', {
+        method: 'POST',
+        body: {
+          phoneNumber,
+          password: password.trim() ? password : undefined,
+          firstName: firstName || undefined,
+          lastName: lastName || undefined
+        }
+      });
+
+      this.pendingPhone = phoneNumber;
+      this.pendingPhonePassword = password.trim() ? password : null;
+      this.pendingPhoneMode = 'verify';
+
+      // 1. Switch view first
+      this.switchView('verify-phone');
+
+      // 2. Safely update headers and display
+      const titleEl = document.getElementById('phone-otp-title');
+      if (titleEl) titleEl.textContent = 'Verify Phone Number';
+
+      const displayEl = document.getElementById('verify-phone-display');
+      if (displayEl) {
+        displayEl.textContent = phoneNumber;
+      }
+
+      const otpInput = document.getElementById('verify-phone-otp');
+      if (otpInput) {
+        otpInput.value = '';
+        setTimeout(() => otpInput.focus(), 100);
+      }
+
+      this.startResendPhoneCooldown(60);
+      this.toast('Account registered! Please enter the SMS verification code.', 'success');
+    } catch (error) {
+      this.toast(error.message, 'error');
+    } finally {
+      this.setButtonLoading(btn, false);
+    }
+  }
+
+  // Email Verification OTP
+  async handleVerifyEmailOtp() {
+    const btn = document.getElementById('btn-verify-otp');
+    const otpInput = document.getElementById('verify-otp');
+    const otp = otpInput?.value.trim();
+
+    if (!otp) {
+      this.toast('Please enter the 6-digit verification code.', 'warning');
+      otpInput?.focus();
+      return;
+    }
+
+    if (otp.length !== 6 || !/^\d{6}$/.test(otp)) {
+      this.toast('Verification code must be 6 digits.', 'warning');
+      otpInput?.focus();
+      return;
+    }
+
+    if (!this.pendingEmail) {
+      this.toast('No pending email verification session.', 'warning');
+      this.switchView('login');
+      return;
+    }
+
+    this.setButtonLoading(btn, true, 'Verifying code...');
     try {
       await this.request('/api/v1/auth/verification/verify', {
         method: 'POST',
         body: { email: this.pendingEmail, otp }
       });
 
-      this.toast('Email verified successfully! You may now sign in.', 'success');
-      this.switchView('login');
-      document.getElementById('login-email').value = this.pendingEmail;
-    } catch (err) {
-      this.toast(err.message, 'error');
+      if (this.resendCooldownTimer) {
+        clearInterval(this.resendCooldownTimer);
+        this.resendCooldownTimer = null;
+      }
+
+      // If registered with password, log in automatically and navigate to dashboard
+      if (this.pendingPassword) {
+        this.setButtonLoading(btn, true, 'Signing in...');
+        try {
+          const loginData = await this.request('/api/v1/auth/login', {
+            method: 'POST',
+            body: { email: this.pendingEmail, password: this.pendingPassword }
+          });
+
+          this.pendingPassword = null;
+          this.saveTokens(loginData.accessToken, loginData.refreshToken);
+          this.toast('Email verified and signed in successfully!', 'success');
+          await this.loadDashboard();
+          return;
+        } catch (loginError) {
+          this.toast('Email verified! Please sign in.', 'success');
+          this.switchView('login');
+          const loginEmailInput = document.getElementById('login-email');
+          if (loginEmailInput) loginEmailInput.value = this.pendingEmail;
+        }
+      } else {
+        this.toast('Email verified successfully! You can now sign in.', 'success');
+        this.switchView('login');
+        const loginEmailInput = document.getElementById('login-email');
+        if (loginEmailInput) loginEmailInput.value = this.pendingEmail;
+      }
+    } catch (error) {
+      this.toast(error.message || 'Invalid or expired verification code.', 'error');
+      otpInput?.select();
+    } finally {
+      this.setButtonLoading(btn, false);
     }
   }
 
-  async handleResendOtp() {
-    if (!this.pendingEmail) return;
+  // Phone OTP Verification (Registration verification OR Passwordless Login)
+  async handleVerifyPhoneOtp() {
+    const btn = document.getElementById('btn-verify-phone-otp');
+    const otpInput = document.getElementById('verify-phone-otp');
+    const otp = otpInput?.value.trim();
+
+    if (!otp) {
+      this.toast('Please enter the 6-digit SMS verification code.', 'warning');
+      otpInput?.focus();
+      return;
+    }
+
+    if (otp.length !== 6 || !/^\d{6}$/.test(otp)) {
+      this.toast('Verification code must be 6 digits.', 'warning');
+      otpInput?.focus();
+      return;
+    }
+
+    if (!this.pendingPhone) {
+      this.toast('No pending phone verification session.', 'warning');
+      this.switchView('login');
+      return;
+    }
+
+    this.setButtonLoading(btn, true, 'Verifying code...');
+    try {
+      if (this.pendingPhoneMode === 'login') {
+        const data = await this.request('/api/v1/auth/phone/login/verify', {
+          method: 'POST',
+          body: { phoneNumber: this.pendingPhone, otp }
+        });
+
+        if (this.resendPhoneCooldownTimer) {
+          clearInterval(this.resendPhoneCooldownTimer);
+          this.resendPhoneCooldownTimer = null;
+        }
+
+        this.saveTokens(data.accessToken, data.refreshToken);
+        this.toast('Phone authenticated successfully!', 'success');
+        await this.loadDashboard();
+      } else {
+        await this.request('/api/v1/auth/phone/verification/verify', {
+          method: 'POST',
+          body: { phoneNumber: this.pendingPhone, otp }
+        });
+
+        if (this.resendPhoneCooldownTimer) {
+          clearInterval(this.resendPhoneCooldownTimer);
+          this.resendPhoneCooldownTimer = null;
+        }
+
+        // If registered with password, log in automatically, else navigate to sign in
+        if (this.pendingPhonePassword) {
+          this.setButtonLoading(btn, true, 'Signing in...');
+          try {
+            const loginData = await this.request('/api/v1/auth/phone/login', {
+              method: 'POST',
+              body: { phoneNumber: this.pendingPhone, password: this.pendingPhonePassword }
+            });
+            this.pendingPhonePassword = null;
+            this.saveTokens(loginData.accessToken, loginData.refreshToken);
+            this.toast('Phone verified and signed in successfully!', 'success');
+            await this.loadDashboard();
+            return;
+          } catch {
+            this.toast('Phone verified! Please sign in.', 'success');
+            this.switchView('login');
+            const loginPhoneInput = document.getElementById('login-phone-number');
+            if (loginPhoneInput) loginPhoneInput.value = this.pendingPhone;
+          }
+        } else {
+          this.toast('Phone verified! You can now sign in.', 'success');
+          this.switchView('login');
+          const loginPhoneInput = document.getElementById('login-phone-number');
+          if (loginPhoneInput) loginPhoneInput.value = this.pendingPhone;
+        }
+      }
+    } catch (error) {
+      this.toast(error.message || 'Invalid or expired verification code.', 'error');
+      otpInput?.select();
+    } finally {
+      this.setButtonLoading(btn, false);
+    }
+  }
+
+  // Resend Email OTP
+  async handleResendEmailOtp() {
+    if (!this.pendingEmail) {
+      this.toast('No email currently pending verification.', 'warning');
+      return;
+    }
+    const btn = document.getElementById('btn-resend-otp');
+    if (btn?.disabled) return;
+
+    this.setButtonLoading(btn, true, 'Resending...');
     try {
       await this.request('/api/v1/auth/verification/resend', {
         method: 'POST',
         body: { email: this.pendingEmail }
       });
-      this.toast('New verification code sent.', 'info');
-      this.startResendCooldown();
-    } catch (err) {
-      this.toast(err.message, 'error');
+      this.toast('New verification code sent to your email.', 'info');
+      this.startResendCooldown(60);
+    } catch (error) {
+      this.toast(error.message, 'error');
+    } finally {
+      this.setButtonLoading(btn, false);
     }
   }
 
-  startResendCooldown() {
-    let secondsLeft = 60;
-    const btn = document.getElementById('btn-resend-otp');
-    const timer = document.getElementById('resend-timer');
-    if (!btn || !timer) return;
+  // Resend Phone OTP
+  async handleResendPhoneOtp() {
+    if (!this.pendingPhone) {
+      this.toast('No phone currently pending verification.', 'warning');
+      return;
+    }
+    const btn = document.getElementById('btn-resend-phone-otp');
+    if (btn?.disabled) return;
 
-    btn.disabled = true;
-    timer.textContent = `(Resend in ${secondsLeft}s)`;
-
-    if (this.resendCooldownTimer) clearInterval(this.resendCooldownTimer);
-    this.resendCooldownTimer = setInterval(() => {
-      secondsLeft--;
-      if (secondsLeft <= 0) {
-        clearInterval(this.resendCooldownTimer);
-        btn.disabled = false;
-        timer.textContent = '';
+    this.setButtonLoading(btn, true, 'Resending...');
+    try {
+      if (this.pendingPhoneMode === 'login') {
+        await this.request('/api/v1/auth/phone/login/request', {
+          method: 'POST',
+          body: { phoneNumber: this.pendingPhone }
+        });
       } else {
-        timer.textContent = `(Resend in ${secondsLeft}s)`;
+        await this.request('/api/v1/auth/phone/verification/resend', {
+          method: 'POST',
+          body: { phoneNumber: this.pendingPhone }
+        });
       }
-    }, 1000);
+      this.toast('SMS verification code resent.', 'info');
+      this.startResendPhoneCooldown(60);
+    } catch (error) {
+      this.toast(error.message, 'error');
+    } finally {
+      this.setButtonLoading(btn, false);
+    }
   }
 
-  async handleForgotPassword(e) {
-    e.preventDefault();
+  // Email Forgot Password
+  async handleEmailForgot() {
     const email = document.getElementById('forgot-email').value.trim();
-
     try {
       await this.request('/api/v1/auth/password-reset/request', {
         method: 'POST',
@@ -343,35 +960,67 @@ class LoginLabApp {
       });
 
       this.pendingEmail = email;
-      document.getElementById('reset-email-display').textContent = email;
-      this.toast('Password recovery code sent.', 'info');
+      this.resetMode = 'email';
+      document.getElementById('reset-target-display').textContent = email;
       this.switchView('reset-verify');
-    } catch (err) {
-      this.toast(err.message, 'error');
+      this.toast('If an account exists, a recovery code was sent.', 'info');
+    } catch (error) {
+      this.toast(error.message, 'error');
     }
   }
 
-  async handleResetVerify(e) {
-    e.preventDefault();
+  // Phone Forgot Password
+  async handlePhoneForgot() {
+    const phoneNumber = document.getElementById('forgot-phone-number').value.trim();
+    try {
+      await this.request('/api/v1/auth/phone/password-reset/request', {
+        method: 'POST',
+        body: { phoneNumber }
+      });
+
+      this.pendingPhone = phoneNumber;
+      this.resetMode = 'phone';
+      document.getElementById('reset-target-display').textContent = phoneNumber;
+      this.switchView('reset-verify');
+      this.toast('If an account exists, a recovery code was sent.', 'info');
+    } catch (error) {
+      this.toast(error.message, 'error');
+    }
+  }
+
+  // Verify Reset OTP
+  async handleVerifyResetOtp() {
     const otp = document.getElementById('reset-otp').value.trim();
 
     try {
-      const data = await this.request('/api/v1/auth/password-reset/verify', {
-        method: 'POST',
-        body: { email: this.pendingEmail, otp }
-      });
+      let data;
+      if (this.resetMode === 'phone') {
+        data = await this.request('/api/v1/auth/phone/password-reset/verify', {
+          method: 'POST',
+          body: { phoneNumber: this.pendingPhone, otp }
+        });
+      } else {
+        data = await this.request('/api/v1/auth/password-reset/verify', {
+          method: 'POST',
+          body: { email: this.pendingEmail, otp }
+        });
+      }
 
       this.resetToken = data.resetToken;
-      this.toast('Code verified. Enter your new password.', 'success');
       this.switchView('reset-complete');
-    } catch (err) {
-      this.toast(err.message, 'error');
+      this.toast('Code verified! Choose a new password.', 'success');
+    } catch (error) {
+      this.toast(error.message, 'error');
     }
   }
 
-  async handleResetComplete(e) {
-    e.preventDefault();
+  // Complete Password Reset
+  async handleCompleteReset() {
     const newPassword = document.getElementById('reset-new-password').value;
+    if (!this.resetToken) {
+      this.switchView('login');
+      return;
+    }
 
     try {
       await this.request('/api/v1/auth/password-reset/complete', {
@@ -379,96 +1028,223 @@ class LoginLabApp {
         body: { resetToken: this.resetToken, newPassword }
       });
 
-      this.toast('Password reset successfully. Please sign in.', 'success');
+      this.resetToken = null;
+      this.toast('Password reset successfully! Please sign in.', 'success');
       this.switchView('login');
-    } catch (err) {
-      this.toast(err.message, 'error');
+    } catch (error) {
+      this.toast(error.message, 'error');
     }
   }
 
-  // --- 6. DASHBOARD & SESSION MANAGEMENT ---
+  // --- 6. DEV SANDBOX HELPERS ---
+  async fetchDevEmailOtp(type = 'verify') {
+    if (!this.pendingEmail) {
+      this.toast('No email currently pending.', 'warning');
+      return;
+    }
+    try {
+      const data = await this.request(`/api/v1/auth/dev/otp?email=${encodeURIComponent(this.pendingEmail)}&type=${type}`);
+      if (data?.otp) {
+        const input = document.getElementById('verify-otp');
+        if (input) input.value = data.otp;
+        this.toast(`Auto-filled Dev OTP: ${data.otp}`, 'success');
+      }
+    } catch (err) {
+      this.toast('No captured dev OTP found. Check console or wait a moment.', 'warning');
+    }
+  }
+
+  async fetchDevSmsOtp() {
+    if (!this.pendingPhone) {
+      this.toast('No phone currently pending.', 'warning');
+      return;
+    }
+    try {
+      const type = this.pendingPhoneMode === 'login' ? 'login' : 'verify';
+      const data = await this.request(`/api/v1/auth/dev/sms-otp?phoneNumber=${encodeURIComponent(this.pendingPhone)}&type=${type}`);
+      if (data?.otp) {
+        const input = document.getElementById('verify-phone-otp');
+        if (input) input.value = data.otp;
+        this.toast(`Auto-filled Dev SMS OTP: ${data.otp}`, 'success');
+      }
+    } catch (err) {
+      this.toast('No captured dev SMS OTP found. Check server console.', 'warning');
+    }
+  }
+
+  async fetchDevResetOtp() {
+    try {
+      let data;
+      if (this.resetMode === 'phone' && this.pendingPhone) {
+        data = await this.request(`/api/v1/auth/dev/sms-otp?phoneNumber=${encodeURIComponent(this.pendingPhone)}&type=reset`);
+      } else if (this.pendingEmail) {
+        data = await this.request(`/api/v1/auth/dev/otp?email=${encodeURIComponent(this.pendingEmail)}&type=reset`);
+      }
+
+      if (data?.otp) {
+        const input = document.getElementById('reset-otp');
+        if (input) input.value = data.otp;
+        this.toast(`Auto-filled Dev Recovery Code: ${data.otp}`, 'success');
+      }
+    } catch (err) {
+      this.toast('No captured dev code found. Check server console.', 'warning');
+    }
+  }
+
+  // --- 7. DASHBOARD & SESSION MANAGEMENT ---
   async loadDashboard() {
     this.setAuthState('loading');
     try {
-      const userData = await this.authenticatedRequest('/api/v1/auth/me');
-      this.currentUser = userData.user;
-
-      document.getElementById('dash-greeting').textContent = `Welcome, ${this.currentUser.firstName || 'User'}`;
-      document.getElementById('dash-email').textContent = this.currentUser.email;
-
+      const meData = await this.authenticatedRequest('/api/v1/auth/me');
+      this.currentUser = meData.user;
       this.setAuthState('authenticated');
+      this.renderDashboard();
       this.switchView('dashboard');
-
-      this.loadSecurityStatus();
-      this.loadSessions();
-    } catch (err) {
-      this.toast('Session expired. Please sign in.', 'info');
+    } catch {
       this.handleAuthFailure();
     }
   }
 
-  async loadSecurityStatus() {
+  async renderDashboard() {
+    if (!this.currentUser) return;
+
+    const greeting = document.getElementById('dash-greeting');
+    const emailBadge = document.getElementById('dash-email');
+    const phoneBadge = document.getElementById('dash-phone');
+
+    if (greeting) {
+      const name = this.currentUser.firstName
+        ? `${this.currentUser.firstName} ${this.currentUser.lastName || ''}`.trim()
+        : 'User';
+      greeting.textContent = `Welcome, ${name}`;
+    }
+
+    if (emailBadge) {
+      emailBadge.textContent = this.currentUser.email ? `✉️ ${this.currentUser.email}` : '✉️ No Email';
+    }
+
+    if (phoneBadge) {
+      phoneBadge.textContent = this.currentUser.phoneNumber ? `📱 ${this.currentUser.phoneNumber}` : '📱 No Phone';
+    }
+
+    // Load Security Status
     try {
-      const status = await this.authenticatedRequest('/api/v1/auth/security');
-      document.getElementById('sec-email-verified').textContent = status.emailVerified ? 'Verified' : 'Unverified';
-      document.getElementById('sec-active-sessions').textContent = status.activeSessions;
-      
-      const lockBadge = document.getElementById('sec-locked-status');
-      if (status.accountLocked) {
-        lockBadge.textContent = 'Locked';
-        lockBadge.className = 'badge badge-danger';
-      } else {
-        lockBadge.textContent = 'Normal (Unlocked)';
-        lockBadge.className = 'badge badge-success';
+      const sec = await this.authenticatedRequest('/api/v1/auth/security');
+      const emailVerBadge = document.getElementById('sec-email-verified');
+      const phoneVerBadge = document.getElementById('sec-phone-verified');
+      const sessionsCount = document.getElementById('sec-active-sessions');
+      const lockoutBadge = document.getElementById('sec-locked-status');
+
+      if (emailVerBadge) {
+        emailVerBadge.textContent = sec.emailVerified ? 'Verified' : 'Unverified';
+        emailVerBadge.className = `badge ${sec.emailVerified ? 'badge-success' : 'badge-warning'}`;
       }
 
-      document.getElementById('sec-password-updated').textContent = new Date(status.passwordUpdatedAt).toLocaleDateString();
+      if (phoneVerBadge) {
+        phoneVerBadge.textContent = sec.phoneVerified ? 'Verified' : (sec.phoneNumber ? 'Unverified' : 'Not linked');
+        phoneVerBadge.className = `badge ${sec.phoneVerified ? 'badge-success' : 'badge-warning'}`;
+      }
+
+      if (sessionsCount) sessionsCount.textContent = String(sec.activeSessions);
+      if (lockoutBadge) {
+        lockoutBadge.textContent = sec.accountLocked ? 'Locked' : 'Normal';
+        lockoutBadge.className = `badge ${sec.accountLocked ? 'badge-danger' : 'badge-success'}`;
+      }
+
+      // Google Identity Status in Dashboard
+      const googleLinkedBadge = document.getElementById('sec-google-linked');
+      const googleLinkSection = document.getElementById('google-link-section');
+      const isGoogleLinked = Boolean(this.currentUser?.identities?.some((i) => i.provider === 'GOOGLE'));
+
+      if (googleLinkedBadge) {
+        googleLinkedBadge.textContent = isGoogleLinked ? 'Linked' : 'Not Linked';
+        googleLinkedBadge.className = `badge ${isGoogleLinked ? 'badge-success' : 'badge-warning'}`;
+      }
+
+      if (googleLinkSection) {
+        if (!isGoogleLinked && this.googleAuthEnabled && this.googleClientId) {
+          googleLinkSection.classList.remove('hidden');
+        } else {
+          googleLinkSection.classList.add('hidden');
+        }
+      }
     } catch {}
+
+    // Load Sessions List
+    this.loadSessionsList();
   }
 
-  async loadSessions() {
-    const list = document.getElementById('sessions-list');
-    if (!list) return;
+  async loadSessionsList() {
+    const listEl = document.getElementById('sessions-list');
+    if (!listEl) return;
 
     try {
       const data = await this.authenticatedRequest('/api/v1/auth/sessions');
-      list.innerHTML = '';
+      listEl.innerHTML = '';
 
       if (!data.sessions || data.sessions.length === 0) {
-        list.innerHTML = '<p class="session-meta">No active sessions.</p>';
+        listEl.innerHTML = '<div class="empty-state">No active sessions found.</div>';
         return;
       }
 
       data.sessions.forEach((s) => {
-        const row = document.createElement('div');
-        row.className = 'session-row';
-        row.innerHTML = `
+        const item = document.createElement('div');
+        item.className = `session-item ${s.isCurrent ? 'current-session' : ''}`;
+        item.innerHTML = `
           <div class="session-info">
-            <strong>${s.isCurrent ? 'Current Device 🟢' : 'Other Device'}</strong>
-            <span class="session-meta">IP: ${s.ipAddress || 'Unknown'} | Last active: ${new Date(s.lastUsedAt).toLocaleTimeString()}</span>
+            <div class="session-device">
+              ${s.userAgent ? s.userAgent.substring(0, 48) : 'Unknown Device'}
+              ${s.isCurrent ? '<span class="current-badge">Current Device</span>' : ''}
+            </div>
+            <div class="session-meta">
+              IP: ${s.ipAddress || '127.0.0.1'} • Last active: ${new Date(s.lastUsedAt).toLocaleTimeString()}
+            </div>
           </div>
-          ${!s.isCurrent ? `<button class="btn btn-danger btn-sm" onclick="window.app.revokeSession('${s.id}')">Revoke</button>` : ''}
+          ${
+            !s.isCurrent
+              ? `<button class="btn btn-secondary btn-xs btn-revoke-session" data-id="${s.id}">Revoke</button>`
+              : ''
+          }
         `;
-        list.appendChild(row);
+        listEl.appendChild(item);
+      });
+
+      listEl.querySelectorAll('.btn-revoke-session').forEach((btn) => {
+        btn.addEventListener('click', async (e) => {
+          const sid = e.target.getAttribute('data-id');
+          await this.revokeSession(sid);
+        });
       });
     } catch {}
   }
 
   async revokeSession(sessionId) {
     try {
-      await this.authenticatedRequest(`/api/v1/auth/sessions/${sessionId}`, {
-        method: 'DELETE'
-      });
+      await this.authenticatedRequest(`/api/v1/auth/sessions/${sessionId}`, { method: 'DELETE' });
       this.toast('Session revoked.', 'info');
-      this.loadSessions();
-      this.loadSecurityStatus();
-    } catch (err) {
-      this.toast(err.message, 'error');
+      this.loadSessionsList();
+    } catch (error) {
+      this.toast(error.message, 'error');
     }
   }
 
-  async handleChangePassword(e) {
-    e.preventDefault();
+  async handleLogout() {
+    try {
+      await this.authenticatedRequest('/api/v1/auth/logout', { method: 'POST' });
+    } catch {}
+    this.handleAuthFailure();
+    this.toast('Logged out.', 'info');
+  }
+
+  async handleLogoutAll() {
+    try {
+      await this.authenticatedRequest('/api/v1/auth/logout-all', { method: 'POST' });
+    } catch {}
+    this.handleAuthFailure();
+    this.toast('All devices logged out.', 'info');
+  }
+
+  async handleChangePassword() {
     const currentPassword = document.getElementById('change-current-pass').value;
     const newPassword = document.getElementById('change-new-pass').value;
 
@@ -478,31 +1254,49 @@ class LoginLabApp {
         body: { currentPassword, newPassword }
       });
 
-      this.toast('Password changed successfully. All sessions revoked. Please sign in again.', 'success');
+      this.toast('Password updated. Please sign in with your new password.', 'success');
       this.handleAuthFailure();
-    } catch (err) {
-      this.toast(err.message, 'error');
+    } catch (error) {
+      this.toast(error.message, 'error');
     }
   }
 
-  async handleLogout() {
+  async handleRequestPhoneChange() {
+    const newPhoneNumber = document.getElementById('new-phone-input').value.trim();
     try {
-      await this.authenticatedRequest('/api/v1/auth/logout', { method: 'POST' });
-    } catch {}
-    this.toast('Signed out successfully.', 'info');
-    this.handleAuthFailure();
+      await this.authenticatedRequest('/api/v1/auth/phone/change/request', {
+        method: 'POST',
+        body: { newPhoneNumber }
+      });
+
+      this.toast('Verification SMS sent to new phone number!', 'info');
+      document.getElementById('form-verify-phone-change')?.classList.remove('hidden');
+    } catch (error) {
+      this.toast(error.message, 'error');
+    }
   }
 
-  async handleLogoutAll() {
+  async handleVerifyPhoneChange() {
+    const newPhoneNumber = document.getElementById('new-phone-input').value.trim();
+    const otp = document.getElementById('change-phone-otp').value.trim();
+
     try {
-      await this.authenticatedRequest('/api/v1/auth/logout-all', { method: 'POST' });
-    } catch {}
-    this.toast('All devices signed out successfully.', 'info');
-    this.handleAuthFailure();
+      await this.authenticatedRequest('/api/v1/auth/phone/change/verify', {
+        method: 'POST',
+        body: { newPhoneNumber, otp }
+      });
+
+      this.toast('Phone number updated and verified!', 'success');
+      document.getElementById('form-verify-phone-change')?.classList.add('hidden');
+      this.loadDashboard();
+    } catch (error) {
+      this.toast(error.message, 'error');
+    }
   }
 }
 
-window.app = new LoginLabApp();
-document.addEventListener('DOMContentLoaded', () => {
+// Instantiate on DOM load
+window.addEventListener('DOMContentLoaded', () => {
+  window.app = new LoginLabApp();
   window.app.init();
 });

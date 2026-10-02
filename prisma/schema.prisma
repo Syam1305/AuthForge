@@ -13,6 +13,13 @@ generator client {
 enum OtpPurpose {
   EMAIL_VERIFICATION
   PASSWORD_RESET
+  PHONE_VERIFICATION
+  PHONE_LOGIN
+  PHONE_PASSWORD_RESET
+}
+
+enum AuthProvider {
+  GOOGLE
 }
 
 enum SecurityEventType {
@@ -29,25 +36,58 @@ enum SecurityEventType {
   SESSION_REVOKED
   ACCOUNT_LOCKED
   ACCOUNT_UNLOCKED
+  PHONE_VERIFIED
+  PHONE_OTP_REQUESTED
+  PHONE_OTP_RESENT
+  PHONE_LOGIN_SUCCESS
+  PHONE_LOGIN_FAILURE
+  PHONE_PASSWORD_RESET_REQUESTED
+  PHONE_PASSWORD_RESET_SUCCESS
+  PHONE_NUMBER_CHANGED
+  SMS_DELIVERY_FAILED
+  GOOGLE_LOGIN_SUCCESS
+  GOOGLE_LOGIN_FAILURE
+  GOOGLE_IDENTITY_CREATED
+  GOOGLE_IDENTITY_LINKED
 }
 
 model User {
   id                          String                        @id @default(uuid())
-  email                       String                        @unique
-  passwordHash                String
+  email                       String?                       @unique
+  phoneNumber                 String?                       @unique
+  passwordHash                String?
   firstName                   String?
   lastName                    String?
   isActive                    Boolean                       @default(true)
   emailVerifiedAt             DateTime?
+  phoneNumberVerifiedAt       DateTime?
   failedLoginAttempts         Int                           @default(0)
   lockedUntil                 DateTime?
   passwordUpdatedAt           DateTime                      @default(now())
   createdAt                   DateTime                      @default(now())
   updatedAt                   DateTime                      @updatedAt
+  identities                  AuthIdentity[]
   otpChallenges               OtpChallenge[]
   passwordResetAuthorizations PasswordResetAuthorization[]
   sessions                    Session[]
   securityEvents              SecurityEvent[]
+
+  @@index([phoneNumber])
+}
+
+model AuthIdentity {
+  id              String       @id @default(uuid())
+  userId          String
+  provider        AuthProvider
+  providerSubject String
+  email           String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerSubject])
+  @@index([userId])
 }
 
 model OtpChallenge {
